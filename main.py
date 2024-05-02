@@ -1,4 +1,5 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage
+from importlib.resources import as_file
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image
 import pandas as pd      
 import random
 import os  
@@ -14,8 +15,9 @@ import colorlog
 import time
 import sys
 import configparser
-csv_path = 'reply.csv'  # 替换为你的CSV文件路径
-config = configparser.ConfigParser()
+csv_path = './data/reply.csv'  # 替换为你的CSV文件路径
+config = configparser.ConfigParser() 
+image_folder = '.\data\CG'
 #只是log
 logger = logging.getLogger('LoveYou')
 logger.setLevel(logging.DEBUG)
@@ -52,16 +54,18 @@ except:
    logger.error('未能成功读取reply.csv,请确认文件是否存在')
    logger.error('程序将在5秒后退出')
    time.sleep(5)
-   sys.exit()  
+   sys.exit()
 
 
-def loadbot():
-   # 读取配置文件  
+def loadconfig():
+   # 读取配置文件
+   fp_dir = os.getcwd() #取得的是exe文件路径
+   path = os.path.join(fp_dir, "config.ini") #拼接上配置文件名称目录  
    try:
-      config.read('config.ini')
+      config.read(path,encoding='utf-8')
       logger.info('正在加载config.ini') 
    except :
-      logger.error('无法加载config.ini,请确认文件是否存在或填写格式是否正确')
+      logger.error('无法加载config.ini,请检查文件是否存在或填写格式是否正确')
       logger.error('程序将在5秒后退出')
       time.sleep(5)
       sys.exit
@@ -71,15 +75,67 @@ def loadbot():
    verify_key = config.get('bot', 'verify_key')  
    host = config.get('bot', 'host')  
    port = config.get('bot', 'port')
+   bot_name=config.get('others','bot_name')
+   baseline=config.getint('random_CG','baseline')
+   rate=config.getfloat('random_CG','rate')
    logger.info('config.ini已成功加载')
-   time.sleep(3) 
-   return  bot_qq,verify_key,host,port
+   #logger.info('正在检查运行必须文件...')
+   time.sleep(3)
+   logger.debug('bot_name为'+bot_name) 
+   return  bot_qq,verify_key,host,port,bot_name,baseline,rate
 
-bot_qq,verify_key,host,port=loadbot()
+bot_qq,verify_key,host,port,bot_name,baseline,rate=loadconfig()
 
-def update_txt(qq, hgbh, txt_filename='qq.txt'):  
-    #qq = str(qq)  
-    #hgbh = int(hgbh)  
+  
+
+
+def current_timestamp():  
+    return int(time.time())
+
+# 写入或更新用户的最后判断时间戳  
+def update_user_timestamp(user_id, timestamp):  
+    with open('./data/recoder.txt', 'a+') as f:  
+        # 定位到用户ID的部分（如果存在）  
+        f.seek(0)  
+        lines = f.readlines()  
+        updated = False  
+  
+        # 遍历行并更新或添加用户的时间戳  
+        new_lines = []  
+        for line in lines:  
+            if line.startswith(str(user_id) + '='):  
+                # 更新时间戳  
+                new_lines.append(f"\n{user_id}={timestamp}")  
+                updated = True  
+                break  
+            else:  
+                new_lines.append(line)  
+  
+        # 如果用户的时间戳不存在，则添加  
+        if not updated:  
+            new_lines.append(f"\n{user_id}={timestamp}")  
+  
+        # 回写文件  
+        f.seek(0)  
+        f.truncate(0)  
+        f.writelines(new_lines)
+        logger.debug('时间戳回写')  
+  
+# 读取用户的最后判断时间戳  
+def get_user_timestamp(user_id):  
+    try:  
+        with open('./data/recoder.txt', 'r') as f:  
+            for line in f:  
+                if line.startswith(str(user_id) + '='):  
+                    return int(line.split('=')[1].strip())
+                logger.debug('时间戳读取完成')  
+        return None  
+    except FileNotFoundError:  
+        logger.warning('./data/recoder.txt丢失')
+        return None
+
+
+def update_txt(qq, hgbh, txt_filename='./data/qq.txt'):    
   
     # 读取文件的所有行到列表中  
     with open(txt_filename, 'r', encoding='utf-8') as file:  
@@ -117,9 +173,7 @@ def update_txt(qq, hgbh, txt_filename='qq.txt'):
         logger.debug(f"Error: {e.strerror} : {temp_file.name}")
         logger.debug('已清理')
   
-def change_txt(csv_path, search_term, m):      
-    # 加载CSV文件到pandas DataFrame      
-    #df = pd.read_csv(csv_path, header=None)  # 假设没有列名，使用header=None      
+def change_txt(search_term, m):          
     
     # 筛选匹配第一列的行      
     matches = df[df.iloc[:, 0] == search_term]      
@@ -175,7 +229,7 @@ def extract_numbers_from_string_iterative(input_string):
     return numbers  
   
 
-def read_txt(qq, filename='qq.txt'):
+def read_txt(qq, filename='./data/qq.txt'):
     int_love = None
     str_love = None
 
@@ -213,7 +267,7 @@ def read_txt(qq, filename='qq.txt'):
     logger.debug('读取好感度完成')
     return int_love, str_love       
 
-def GlobalCompare(filename='qq.txt'):  
+def GlobalCompare(filename='./data/qq.txt'):  
     # 创建一个字典来存储b值和a函数的第二个返回值  
     b_values = {}  
       
@@ -255,7 +309,7 @@ async def bhrkhrt(event: GroupMessage):
     message =str(event.message_chain) 
     qq=str(event.sender.id)
     int_love,str_love=read_txt(qq)
-    reply,love=change_txt(csv_path,message,int_love)
+    reply,love=change_txt(message,int_love)
     try:
         love = int(love)
     except:
@@ -264,16 +318,47 @@ async def bhrkhrt(event: GroupMessage):
         await bot.send(event,reply)
     if love != 0:
         update_txt(qq,love)
+        logger.debug('已更新用户好感')
 
 @bot.on(GroupMessage)
 async def sadxchjw(event: GroupMessage):
     if str(event.message_chain) == '我的好感度' or str(event.message_chain) == '我的好感':
-        qq2=str(event.sender.id)
-        int_love,str_love=read_txt(qq2)
+        qq=str(event.sender.id)
+        int_love,str_love=read_txt(qq)
         if str_love != ''or None:
            await bot.send(event,'你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
         else:
            await bot.send(event,'第一次见呢，你的好感度是0 ≡ω≡')     #此语句不一定有效
+
+
+@bot.on(GroupMessage)
+async def jjjjjj(event:GroupMessage):
+    if bot_name in str(event.message_chain):
+        a=random.random()
+        if rate >= a:
+            logger.debug('发送概率判断成功')
+            qq=str(event.sender.id)
+            int_love,str_love=read_txt(qq)
+            if int_love >= baseline:
+              logger.debug('baseline判断成功')
+              # 获取当前时间戳  
+              current_ts = current_timestamp()  
+              # 读取用户最后判断时间戳  
+              last_ts = get_user_timestamp(qq)  
+              # 如果时间戳不存在或超过当前日期（即今天上午9点之前）  
+              if last_ts is None or last_ts < (current_ts - (current_ts % (24 * 60 * 60)) + 9 * 60 * 60):  
+                  # 更新时间戳为今天的时间（上午9点）  
+                  update_user_timestamp(qq, current_ts - (current_ts % (24 * 60 * 60)) + 9 * 60 * 60)
+                  logger.debug('时间戳判断成功')
+                  # 获取文件夹中所有图片文件（.jpg或.png）  
+                  images = [f for f in os.listdir(image_folder) if f.endswith('.jpg') or f.endswith('.png')]  
+                  # 如果文件夹中有图片，随机选择一张  
+                  if images:  
+                      path2 = os.path.join(image_folder, random.choice(images))
+                      logger.debug(path2)
+                      await bot.send(event,Image(path=path2),True)
+                      logger.debug('CG发送成功')  
+
 
 @bot.on(GroupMessage)
 async def dewcfvew(event: GroupMessage):
@@ -287,7 +372,7 @@ async def dewcfvew(event: GroupMessage):
 
         await bot.send(event,b + '--------\n喵呜~~~')
 
-''' 如何实现没思路
+''' 如何较好实现还没思路
 @bot.on(GroupMessage)
 async def dewcfvew(event: GroupMessage):
     if str(event.message_chain) =='本群好感排行':
