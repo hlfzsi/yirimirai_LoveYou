@@ -1,5 +1,4 @@
-from importlib.resources import as_file
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage
 import pandas as pd      
 import random
 import os  
@@ -78,16 +77,107 @@ def loadconfig():
    bot_name=config.get('others','bot_name')
    baseline=config.getint('random_CG','baseline')
    rate=config.getfloat('random_CG','rate')
-   logger.info('config.ini已成功加载')
+   master=config.get('others','master')
+   lv_enable=config.get('lv','enable')
+   logger.info('config.ini第一部分已成功加载')
    #logger.info('正在检查运行必须文件...')
-   time.sleep(3)
-   logger.debug('bot_name为'+bot_name) 
-   return  bot_qq,verify_key,host,port,bot_name,baseline,rate
+   time.sleep(1)
+   #logger.debug('bot_name为'+bot_name) 
+   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable
 
-bot_qq,verify_key,host,port,bot_name,baseline,rate=loadconfig()
+bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable=loadconfig()
 
   
+def get_range(value):  
+    if La <= value < Lb: 
+        logger.debug('获得lv1') 
+        return  1 
+    elif Lc <= value < Ld:  
+        logger.debug('获得lv2')
+        return  2
+    elif Le <= value < Lf:
+        logger.debug('获得lv3')  
+        return  3
+    elif Lg <= value < Lh:
+        logger.debug('获得lv4')  
+        return  4
+    elif Li <= value < Lj:
+        logger.debug('获得lv5')  
+        return  5
+    else:
+        logger.debug('未获得lv')  
+        return None  # 返回None表示不属于任何已知范围
+      
 
+def loadconfig_part2():
+   # 读取配置文件
+   fp_dir = os.getcwd() #取得的是exe文件路径
+   path = os.path.join(fp_dir, "config.ini") #拼接上配置文件名称目录  
+   try:
+      config.read(path,encoding='utf-8')
+      logger.info('正在加载第二部分config.ini')
+      lv1= config.get('lv','lv1')
+      a, b = (value.strip() for value in lv1.split(','))
+      lv2= config.get('lv','lv2')
+      c, d = (value.strip() for value in lv2.split(','))
+      lv3= config.get('lv','lv3')
+      e, f = (value.strip() for value in lv3.split(','))
+      lv4= config.get('lv','lv1')
+      g, h = (value.strip() for value in lv4.split(','))
+      lv5= config.get('lv','lv1')
+      i, j = (value.strip() for value in lv5.split(','))
+      belv1=config.get('lv','belv1')
+      aflv1=config.get('lv','aflv1')
+      belv2=config.get('lv','belv2')
+      aflv2=config.get('lv','aflv2')
+      belv3=config.get('lv','belv3')
+      aflv3=config.get('lv','aflv3')
+      belv4=config.get('lv','belv4')
+      aflv4=config.get('lv','aflv4')
+      belv5=config.get('lv','belv5')
+      aflv5=config.get('lv','aflv5')
+      belv1=belv1.replace('\\n','\n')
+      aflv1=aflv1.replace('\\n','\n')
+      belv2=belv2.replace('\\n','\n')
+      aflv2=aflv2.replace('\\n','\n')
+      belv3=belv3.replace('\\n','\n')
+      aflv3=aflv3.replace('\\n','\n')
+      belv4=belv4.replace('\\n','\n')
+      aflv4=aflv4.replace('\\n','\n')
+      belv5=belv5.replace('\\n','\n')
+      aflv5=aflv5.replace('\\n','\n')
+      logger.info('config.ini第二部分已成功加载')
+      return a,b,c,d,e,f,g,h,i,j,belv1,aflv1,belv2,aflv2,belv3,aflv3,belv4,aflv4,belv5,aflv5
+   except:
+      logger.error('无法加载config.ini,请检查文件是否存在或填写格式是否正确')
+      logger.error('程序将在5秒后退出')
+      time.sleep(5)
+      sys.exit       
+
+if lv_enable=='True':
+   logger.info('初始化好感等级...')
+   La,Lb,Lc,Ld,Le,Lf,Lg,Lh,Li,Lj,belv1,aflv1,belv2,aflv2,belv3,aflv3,belv4,aflv4,belv5,aflv5=loadconfig_part2()
+   try:
+       La=int(La)
+       Lb=int(Lb)
+       Lc=int(Lc)
+       Ld=int(Ld)
+       Le=int(Le)
+       Lf=int(Lf)
+       Lg=int(Lg)
+       Li=int(Li)
+       Lj=int(Lj)
+       logger.info('好感等级加载完成')
+       time.sleep(3)
+   except:
+      logger.error('好感等级条件填写有误,请填写整数')
+      logger.error('程序将在5秒后退出')
+      time.sleep(5)
+      sys.exit
+else:
+    logger.info('好感等级无需加载')
+    logger.info('config.ini第二部分已跳过加载')
+    time.sleep(1)
 
 def current_timestamp():  
     return int(time.time())
@@ -149,7 +239,7 @@ def update_txt(qq, hgbh, txt_filename='./data/qq.txt'):
                 match = re.search(r'{qq}=(\d+)(.*)$'.format(qq=qq), line)  
                 if match:  
                     number = int(match.group(1)) + hgbh  
-                    new_line = f'{qq}={number}{match.group(2)}\n'  
+                    new_line = f'\n{qq}={number}{match.group(2)}'  
                     temp_file.write(new_line)  
                     updated = True  
                 else:  
@@ -159,7 +249,7 @@ def update_txt(qq, hgbh, txt_filename='./data/qq.txt'):
   
         # 如果未更新，则添加新行  
         if not updated:  
-            temp_file.write(f'\n{qq}={hgbh}\n') 
+            temp_file.write(f'\n{qq}={hgbh}') 
             logger.debug('新行已添加') 
   
     # 使用shutil来替换原文件，确保原子操作  
@@ -326,9 +416,35 @@ async def sadxchjw(event: GroupMessage):
         qq=str(event.sender.id)
         int_love,str_love=read_txt(qq)
         if str_love != ''or None:
-           await bot.send(event,'你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
-        else:
-           await bot.send(event,'第一次见呢，你的好感度是0 ≡ω≡')     #此语句不一定有效
+           if lv_enable =='False':
+               await bot.send(event,'你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
+           elif lv_enable == "True":
+               lv=get_range(int_love)
+               lv=int(lv)
+               logger.debug('用户好感等级'+str(lv))
+               if lv==1:
+                   await bot.send(event,belv1+str_love+aflv1)
+               elif lv==2:
+                   await bot.send(event,belv2+str_love+aflv2)
+               elif lv==3:
+                   await bot.send(event,belv3+str_love+aflv3)
+               elif lv==4:
+                   await bot.send(event,belv4+str_love+aflv4)
+               elif lv==5:
+                   await bot.send(event,belv5+str_love+aflv5)
+               else:
+                   logger.warning('好感等级未能覆盖所有用户')
+                   if int_love <= 0:
+                       await bot.send(event,bot_name+'不想理你\n'+str_love)
+                   else:
+                       await bot.send(event,bot_name+'很中意你\n'+str_love)
+           else:
+               logger.error('enable参数填写错误,应为True或False')
+               logger.error('程序将在5秒后退出')
+               time.sleep(5)
+               sys.exit
+
+               
 
 
 @bot.on(GroupMessage)
@@ -357,20 +473,28 @@ async def jjjjjj(event:GroupMessage):
                       path2 = os.path.join(image_folder, random.choice(images))
                       logger.debug(path2)
                       await bot.send(event,Image(path=path2),True)
-                      logger.debug('CG发送成功')  
+                      logger.debug('CG发送成功') 
+
+'''写一半不想写了
+@bot.on(FriendMessage)
+async def hhhhhh(event: FriendMessage):
+    qq=str(event.sender)
+    if qq == master and str(event.message_chain)=='/help LoveYou':
+        await bot.send(event,'')
+'''
 
 
 @bot.on(GroupMessage)
 async def dewcfvew(event: GroupMessage):
-    global b
-    b=str('好♡感♡排♡行\n')
+    global reply_b
+    reply_b=str('好♡感♡排♡行\n')
     if str(event.message_chain) =='好感排行':
         qq_list=GlobalCompare  
         for item in qq_list():
             a=str(item)   
-            b=b+a+'\n'
+            reply_b=reply_b+a+'\n'
 
-        await bot.send(event,b + '--------\n喵呜~~~')
+        await bot.send(event,reply_b + '--------\n喵呜~~~')
 
 ''' 如何较好实现还没思路
 @bot.on(GroupMessage)
@@ -379,6 +503,6 @@ async def dewcfvew(event: GroupMessage):
 '''
 try:
        bot.run()
-except Exception as e:
-        logger.error(e)
+except Exception:
+        logger.error(Exception)
         input("按任意键退出")
