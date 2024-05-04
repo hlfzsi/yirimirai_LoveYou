@@ -402,12 +402,12 @@ async def bhrkhrt(event: GroupMessage):
     int_love,str_love=read_txt(qq)
     reply,love=change_txt(message,int_love)
     name=event.sender.get_name()
-    reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
     try:
         love = int(love)
     except:
         love = int(0)
     if reply != None:
+        reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
         await bot.send(event,reply)
     if love != 0:
         update_txt(qq,love)
