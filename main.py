@@ -1,4 +1,4 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At
 import pandas as pd      
 import random
 import os  
@@ -126,28 +126,18 @@ def loadconfig_part2():
       g, h = (value.strip() for value in lv4.split(','))
       lv5= config.get('lv','lv1')
       i, j = (value.strip() for value in lv5.split(','))
-      belv1=config.get('lv','belv1')
-      aflv1=config.get('lv','aflv1')
-      belv2=config.get('lv','belv2')
-      aflv2=config.get('lv','aflv2')
-      belv3=config.get('lv','belv3')
-      aflv3=config.get('lv','aflv3')
-      belv4=config.get('lv','belv4')
-      aflv4=config.get('lv','aflv4')
-      belv5=config.get('lv','belv5')
-      aflv5=config.get('lv','aflv5')
-      belv1=belv1.replace('\\n','\n')
-      aflv1=aflv1.replace('\\n','\n')
-      belv2=belv2.replace('\\n','\n')
-      aflv2=aflv2.replace('\\n','\n')
-      belv3=belv3.replace('\\n','\n')
-      aflv3=aflv3.replace('\\n','\n')
-      belv4=belv4.replace('\\n','\n')
-      aflv4=aflv4.replace('\\n','\n')
-      belv5=belv5.replace('\\n','\n')
-      aflv5=aflv5.replace('\\n','\n')
+      lv1_reply=config.get('lv','lv1_reply')
+      lv1_reply=lv1_reply.replace('\\n','\n')
+      lv2_reply=config.get('lv','lv2_reply')
+      lv2_reply=lv2_reply.replace('\\n','\n')
+      lv3_reply=config.get('lv','lv3_reply')
+      lv3_reply=lv3_reply.replace('\\n','\n')
+      lv4_reply=config.get('lv','lv4_reply')
+      lv4_reply=lv3_reply.replace('\\n','\n')
+      lv5_reply=config.get('lv','lv5_reply')
+      lv5_reply=lv3_reply.replace('\\n','\n')
       logger.info('config.ini第二部分已成功加载')
-      return a,b,c,d,e,f,g,h,i,j,belv1,aflv1,belv2,aflv2,belv3,aflv3,belv4,aflv4,belv5,aflv5
+      return a,b,c,d,e,f,g,h,i,j,lv1_reply,lv2_reply,lv3_reply,lv4_reply,lv5_reply
    except:
       logger.error('无法加载config.ini,请检查文件是否存在或填写格式是否正确')
       logger.error('程序将在5秒后退出')
@@ -156,7 +146,7 @@ def loadconfig_part2():
 
 if lv_enable=='True':
    logger.info('初始化好感等级...')
-   La,Lb,Lc,Ld,Le,Lf,Lg,Lh,Li,Lj,belv1,aflv1,belv2,aflv2,belv3,aflv3,belv4,aflv4,belv5,aflv5=loadconfig_part2()
+   La,Lb,Lc,Ld,Le,Lf,Lg,Lh,Li,Lj,lv1_reply,lv2_reply,lv3_reply,lv4_reply,lv5_reply=loadconfig_part2()
    try:
        La=int(La)
        Lb=int(Lb)
@@ -419,19 +409,26 @@ async def sadxchjw(event: GroupMessage):
            if lv_enable =='False':
                await bot.send(event,'你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
            elif lv_enable == "True":
+               name=event.sender.get_name()
+               name=str(name)
                lv=get_range(int_love)
                lv=int(lv)
                logger.debug('用户好感等级'+str(lv))
                if lv==1:
-                   await bot.send(event,belv1+str_love+aflv1)
+                   lv1_need_reply=lv1_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
+                   await bot.send(event,[At(int(qq)),'\n'+lv1_need_reply])
                elif lv==2:
-                   await bot.send(event,belv2+str_love+aflv2)
+                   lv2_need_reply=lv2_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
+                   await bot.send(event,[At(int(qq)),'\n'+lv2_need_reply])
                elif lv==3:
-                   await bot.send(event,belv3+str_love+aflv3)
+                   lv3_need_reply=lv3_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
+                   await bot.send(event,[At(int(qq)),'\n'+lv3_need_reply])
                elif lv==4:
-                   await bot.send(event,belv4+str_love+aflv4)
+                   lv4_need_reply=lv4_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
+                   await bot.send(event,[At(int(qq)),'\n'+lv4_need_reply])
                elif lv==5:
-                   await bot.send(event,belv5+str_love+aflv5)
+                   lv5_need_reply=lv5_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
+                   await bot.send(event,[At(int(qq)),'\n'+lv5_need_reply])
                else:
                    logger.warning('好感等级未能覆盖所有用户')
                    if int_love <= 0:
