@@ -15,7 +15,7 @@ import time
 import sys
 import configparser
 import requests
-py_version='v1.21'
+py_version='v1.21.1'
 
 csv_path = './data/reply.csv'  # 替换为你的CSV文件路径
 config = configparser.ConfigParser() 
@@ -504,11 +504,26 @@ async def dewcfvew(event: GroupMessage):
 
         await bot.send(event,reply_b + '--------\n喵呜~~~')
 
-''' 如何较好实现还没思路
+
 @bot.on(GroupMessage)
 async def dewcfvew(event: GroupMessage):
+    global reply_a
+    reply_a=str('本群 好♡感♡排♡行\n')
     if str(event.message_chain) =='本群好感排行':
-'''
+        list=await bot.member_list(event.sender.group.id)
+        ids = [member.id for member in list]
+        results = [(str(id), *read_txt(str(id))) for id in ids]  # 使用解包获取int_value和str_value  
+        sorted_results = sorted(results, key=lambda x: x[1], reverse=True)  # 按int_value降序排序
+        top_10_results = sorted_results[:10]
+        formatted_top_10 = [f"{id} : {str_value}" for id, int_value, str_value in top_10_results]
+        for item in formatted_top_10:
+            a=str(item)   
+            reply_a=reply_a+a+'\n'
+        await bot.send(event,reply_a + '--------\n喵呜~~~')
+
+
+
+
 try:
        bot.run()
 except Exception:
