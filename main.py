@@ -14,6 +14,9 @@ import colorlog
 import time
 import sys
 import configparser
+import requests
+py_version='v1.21'
+
 csv_path = './data/reply.csv'  # 替换为你的CSV文件路径
 config = configparser.ConfigParser() 
 image_folder = '.\data\CG'
@@ -80,9 +83,6 @@ def loadconfig():
    master=config.get('others','master')
    lv_enable=config.get('lv','enable')
    logger.info('config.ini第一部分已成功加载')
-   #logger.info('正在检查运行必须文件...')
-   time.sleep(1)
-   #logger.debug('bot_name为'+bot_name) 
    return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable
 
 bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable=loadconfig()
@@ -158,7 +158,6 @@ if lv_enable=='True':
        Li=int(Li)
        Lj=int(Lj)
        logger.info('好感等级加载完成')
-       time.sleep(3)
    except:
       logger.error('好感等级条件填写有误,请填写整数')
       logger.error('程序将在5秒后退出')
@@ -168,6 +167,18 @@ else:
     logger.info('好感等级无需加载')
     logger.info('config.ini第二部分已跳过加载')
     time.sleep(1)
+
+
+try:
+    response = requests.get("https://api.github.com/repos/hlfzsi/yirimirai_LoveYou/releases/latest")
+    py_update=(response.json()["tag_name"])
+    if py_version!=py_update:
+        logger.warning('本项目有更新,请前往https://github.com/hlfzsi/yirimirai_LoveYou/releases')
+    else:
+        logger.info('当前已为最新版本') 
+except:
+    logger.warning('未连接到网络,无法检查更新')
+time.sleep(3)
 
 def current_timestamp():  
     return int(time.time())
@@ -390,6 +401,8 @@ async def bhrkhrt(event: GroupMessage):
     qq=str(event.sender.id)
     int_love,str_love=read_txt(qq)
     reply,love=change_txt(message,int_love)
+    name=event.sender.get_name()
+    reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
     try:
         love = int(love)
     except:
