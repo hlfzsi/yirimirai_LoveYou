@@ -346,15 +346,12 @@ def read_txt(qq, filename='./data/qq.txt'):
                 break  # 找到匹配项后退出循环
 
         # 如果没有找到匹配的qq，在文件末尾添加新条目
-        if str_love is None:
-            new_line = f'\n{qq}=0'
+        if str_love is None or int_love is None:
+            new_line = f'\n{qq}=0\n'
             file.write(new_line)  # 由于已经处于文件末尾，可以直接写入
             str_love = '0'  # 设置str_love为新添加的数值
             int_love = '0'  # 设置int_love为新添加的数值
             logger.debug('已新增行')
-
-    # 如果int_love仍然为None，表示没有纯数字值被提取，但这在上面的逻辑中不太可能发生
-    # 因为即使文本+数字不能转换为整数，str_love也会被设置为文本+数字
     logger.debug('读取好感度完成')
     return int_love, str_love       
 
