@@ -122,9 +122,9 @@ def loadconfig_part2():
       c, d = (value.strip() for value in lv2.split(','))
       lv3= config.get('lv','lv3')
       e, f = (value.strip() for value in lv3.split(','))
-      lv4= config.get('lv','lv1')
+      lv4= config.get('lv','lv4')
       g, h = (value.strip() for value in lv4.split(','))
-      lv5= config.get('lv','lv1')
+      lv5= config.get('lv','lv5')
       i, j = (value.strip() for value in lv5.split(','))
       lv1_reply=config.get('lv','lv1_reply')
       lv1_reply=lv1_reply.replace('\\n','\n')
@@ -155,6 +155,7 @@ if lv_enable=='True':
        Le=int(Le)
        Lf=int(Lf)
        Lg=int(Lg)
+       Lh=int(Lh)
        Li=int(Li)
        Lj=int(Lj)
        logger.info('好感等级加载完成')
@@ -340,17 +341,18 @@ def read_txt(qq, filename='./data/qq.txt'):
                 except ValueError:
                     # 如果不能转换为整数，则只将文本赋值给str_love
                     str_love = value
+                    int_love = 0
                 else:
                     # 如果能转换为整数，同时赋值给str_love
                     str_love = value
                 break  # 找到匹配项后退出循环
 
         # 如果没有找到匹配的qq，在文件末尾添加新条目
-        if str_love is None or int_love is None:
-            new_line = f'\n{qq}=0\n'
+        if str_love is None:
+            new_line = f'\n{qq}=0'
             file.write(new_line)  # 由于已经处于文件末尾，可以直接写入
             str_love = '0'  # 设置str_love为新添加的数值
-            int_love = '0'  # 设置int_love为新添加的数值
+            int_love= 0
             logger.debug('已新增行')
     logger.debug('读取好感度完成')
     return int_love, str_love       
@@ -422,7 +424,6 @@ async def sadxchjw(event: GroupMessage):
                name=event.sender.get_name()
                name=str(name)
                lv=get_range(int_love)
-               lv=int(lv)
                logger.debug('用户好感等级'+str(lv))
                if lv==1:
                    lv1_need_reply=lv1_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
