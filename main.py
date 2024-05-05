@@ -15,7 +15,7 @@ import time
 import sys
 import configparser
 import requests
-py_version='v1.21.1'
+py_version='v1.21.2'
 
 csv_path = './data/reply.csv'  # 替换为你的CSV文件路径
 config = configparser.ConfigParser() 
@@ -265,7 +265,7 @@ def update_txt(qq, hgbh, txt_filename='./data/qq.txt'):
         logger.debug(f"Error: {e.strerror} : {temp_file.name}")
         logger.debug('已清理')
   
-def change_txt(search_term, m):          
+def change_txt(search_term, m):  
     
     # 筛选匹配第一列的行      
     matches = df[df.iloc[:, 0] == search_term]      
@@ -399,8 +399,9 @@ async def bhrkhrt(event: GroupMessage):
     message =str(event.message_chain) 
     qq=str(event.sender.id)
     int_love,str_love=read_txt(qq)
-    reply,love=change_txt(message,int_love)
     name=event.sender.get_name()
+    message=message.replace(qq,'[qq]').replace(name,'[sender]').replace(str(int_love),'[intlove]').replace(str_love,'[love]').replace(bot_name,'[bot]')
+    reply,love=change_txt(message,int_love)
     try:
         love = int(love)
     except:
