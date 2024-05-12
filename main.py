@@ -1,4 +1,7 @@
 from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At
+from mirai_extensions.trigger.message import GroupMessageFilter
+from mirai_extensions.trigger.trigger import *
+from mirai_extensions.trigger import InterruptControl
 import pandas as pd      
 import random
 import os  
@@ -15,7 +18,7 @@ import time
 import sys
 import configparser
 import requests
-py_version='v1.21.2'
+py_version='v1.21.3-beta1'
 
 csv_path = './data/reply.csv'  # 替换为你的CSV文件路径
 config = configparser.ConfigParser() 
@@ -174,12 +177,73 @@ try:
     response = requests.get("https://api.github.com/repos/hlfzsi/yirimirai_LoveYou/releases/latest")
     py_update=(response.json()["tag_name"])
     if py_version!=py_update:
-        logger.warning('本项目有更新,请前往https://github.com/hlfzsi/yirimirai_LoveYou/releases')
+        logger.warning('本项目有更新,请前往https://github.com/hlfzsi/yirimirai_LoveYou/releases\n'+'当前版本:'+py_version)
     else:
-        logger.info('当前已为最新版本') 
+        logger.info('当前已为最新版本'+py_version) 
 except:
     logger.warning('未连接到网络,无法检查更新')
 time.sleep(3)
+
+def pic_support(text):  
+    # 正则表达式匹配 [pic=任意图片名.(png|jpg)]  
+    pattern = r'\[pic=(.*?\.(png|jpg))\]'  
+      
+    # 查找所有匹配项  
+    matches = re.findall(pattern, text)  
+      
+    # 如果没有找到匹配项，则直接返回原字符串和 None  
+    if not matches:  
+        return text, None  
+      
+    # 只关心第一个匹配项  
+    path = matches[0][0]  
+      
+    # 使用 re.sub() 替换掉第一个匹配项  
+    new_text = re.sub(pattern, '', text, count=1)  
+      
+    return new_text, path
+
+def update_alias(qq, str_value,alias_file='./data/alias.txt'):  
+    with open(alias_file, 'r+', encoding='utf-8') as file:  
+        lines = file.readlines()  
+        updated = False  
+        new_lines = []  
+        for line in lines:  
+            line = line.strip()  # 移除行尾的换行符和可能的空白字符  
+            if line.startswith(qq + '='):  
+                # 如果找到匹配的qq，则更新它并标记为已更新  
+                new_lines.append(f"{qq}={str_value}\n")  
+                updated = True  
+            else:  
+                # 否则保留原行  
+                new_lines.append(line + '\n')  
+          
+        # 如果qq不存在于文件中，则添加新行  
+        if not updated:  
+            new_lines.append(f"{qq}={str_value}\n")  
+          
+        # 回到文件开头并写入所有行  
+        file.seek(0)  
+        file.writelines(new_lines)  
+        file.truncate()  # 确保文件大小正确
+        global alias_dict
+        alias_dict=read_alias()  
+  
+def read_alias(alias_file='./data/alias.txt'):  
+    alias_dict = {}  
+    try:  
+        with open(alias_file, 'r', encoding='utf-8') as file:  
+            for line in file:  
+                line = line.strip()  
+                if '=' in line:  
+                    parts = line.split('=')  
+                    if len(parts) == 2:  
+                        qq, str_value = parts  
+                        alias_dict[qq] = str_value  
+    except FileNotFoundError:  
+        logger.error(f"文件 {alias_file} 不存在.")  
+    return alias_dict  
+alias_dict=read_alias()
 
 def current_timestamp():  
     return int(time.time())
@@ -226,6 +290,33 @@ def get_user_timestamp(user_id):
         logger.warning('./data/recoder.txt丢失')
         return None
 
+def replace_alias(text):  
+    for qq, str_value in alias_dict.items():     
+        pattern = rf'{re.escape(qq)}'  
+        text = re.sub(pattern, str_value, text)  
+    return text
+
+def read_codes(filename='./data/alias_code.txt'):  
+    try:  
+        with open(filename, 'r', encoding='utf-8') as file:  
+            codes = file.read().splitlines()  
+        return codes  
+    except FileNotFoundError:  
+        print(f"文件 {filename} 未找到。")  
+        return []  
+  
+def write_codes(codes, filename='./data/alias_code.txt'):  
+    with open(filename, 'w', encoding='utf-8') as file:  
+        for code in codes:  
+            file.write(code + '\n')  
+  
+def check_alias_code(code_to_check, filename='./data/alias_code.txt'):  
+    codes = read_codes(filename)  
+    if code_to_check in codes:  
+        codes.remove(code_to_check)  
+        write_codes(codes, filename)  
+        return True  
+    return False  
 
 def update_txt(qq, hgbh, txt_filename='./data/qq.txt'):    
   
@@ -320,7 +411,6 @@ def extract_numbers_from_string_iterative(input_string):
     # 返回结果字符串  
     return numbers  
   
-
 def read_txt(qq, filename='./data/qq.txt'):
     int_love = None
     str_love = None
@@ -394,13 +484,15 @@ if __name__ == '__main__':
             verify_key=verify_key, host=host, port=port
         )
     )
+inc = InterruptControl(bot)
+
 @bot.on(GroupMessage)
 async def bhrkhrt(event: GroupMessage):
     message =str(event.message_chain) 
     qq=str(event.sender.id)
     int_love,str_love=read_txt(qq)
     name=event.sender.get_name()
-    message=message.replace(qq,'[qq]').replace(name,'[sender]').replace(str(int_love),'[intlove]').replace(str_love,'[love]').replace(bot_name,'[bot]')
+    message=message.replace(qq,'[qq]').replace(name,'[sender]').replace(str(int_love),'[intlove]').replace(str_love,'[love]').replace(bot_name,'[bot]').replace('\n','\\n')
     reply,love=change_txt(message,int_love)
     try:
         love = int(love)
@@ -408,7 +500,12 @@ async def bhrkhrt(event: GroupMessage):
         love = int(0)
     if reply != None:
         reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
-        await bot.send(event,reply)
+        reply=replace_alias(reply)
+        reply,pic=pic_support(reply)
+        if pic != None:
+           await bot.send(event,[reply,Image(path='.\data\pic\\'+pic)])
+        else:
+           await bot.send(event,reply)
     if love != 0:
         update_txt(qq,love)
         logger.debug('已更新用户好感')
@@ -428,19 +525,24 @@ async def sadxchjw(event: GroupMessage):
                logger.debug('用户好感等级'+str(lv))
                if lv==1:
                    lv1_need_reply=lv1_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
+                   lv1_need_reply=replace_alias(lv1_need_reply)
                    await bot.send(event,[At(int(qq)),'\n'+lv1_need_reply])
                elif lv==2:
                    lv2_need_reply=lv2_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
                    await bot.send(event,[At(int(qq)),'\n'+lv2_need_reply])
+                   lv2_need_reply=replace_alias(lv2_need_reply)
                elif lv==3:
                    lv3_need_reply=lv3_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
                    await bot.send(event,[At(int(qq)),'\n'+lv3_need_reply])
+                   lv3_need_reply=replace_alias(lv3_need_reply)
                elif lv==4:
                    lv4_need_reply=lv4_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
                    await bot.send(event,[At(int(qq)),'\n'+lv4_need_reply])
+                   lv4_need_reply=replace_alias(lv4_need_reply)
                elif lv==5:
                    lv5_need_reply=lv5_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
                    await bot.send(event,[At(int(qq)),'\n'+lv5_need_reply])
+                   lv5_need_reply=replace_alias(lv5_need_reply)
                else:
                    logger.warning('好感等级未能覆盖所有用户')
                    if int_love <= 0:
@@ -502,7 +604,7 @@ async def dewcfvew(event: GroupMessage):
         for item in qq_list():
             a=str(item)   
             reply_b=reply_b+a+'\n'
-
+        reply_b=replace_alias(reply_b)
         await bot.send(event,reply_b + '--------\n喵呜~~~')
 
 
@@ -520,11 +622,54 @@ async def dewcfvew(event: GroupMessage):
         for item in formatted_top_10:
             a=str(item)   
             reply_a=reply_a+a+'\n'
+        reply_a=replace_alias(reply_a)
         await bot.send(event,reply_a + '--------\n喵呜~~~')
 
 
+@bot.on(GroupMessage)
+async def alias(event: GroupMessage):
+    message=str(event.message_chain)
+    if message.startswith('/code alias '):
+        message=message.replace('/code alias ','')
+        b=check_alias_code(message)
+        if b==True:
+          logger.debug('code正确')
+          qq=str(event.sender.id)
+          await bot.send(event,'请在120s内发送您要设置的QQ别名喵~')
+          @GroupMessageFilter(group_member=event.sender)
+          def T10(event_new: GroupMessage):
+                  msg = str(event_new.message_chain)
+                  return msg
+          msg=await inc.wait(T10,timeout=120)
+          update_alias(qq,msg)
+          await bot.send(event,'您的QQ别名已设置为:'+msg+' 喵~')
 
 
+
+
+
+
+
+
+          '''
+          await bot.send(event,'请在120s内发送您要设置的QQ别名喵~\n不可以有数字喵~')
+          @GroupMessageFilter(group_member=event.sender)
+          def T11(event_new: GroupMessage):
+                  msg = str(event_new.message_chain)
+                  return msg
+          a=False
+          msg=await inc.wait(T11,timeout=120)
+          while a==False:
+            if extract_numbers_from_string_iterative(msg)=='':
+                update_alias(qq,msg)
+                await bot.send(event,'您的QQ别名已设置为:'+msg+' 喵~')
+                a=True
+            else:
+                await bot.send(event,'请不要包含数字喵~')
+                Trigger.reset(T11)
+        else:
+            await bot.send(event,'不存在该code喵~')
+            '''
 try:
        bot.run()
 except Exception:
