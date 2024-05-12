@@ -136,9 +136,9 @@ def loadconfig_part2():
       lv3_reply=config.get('lv','lv3_reply')
       lv3_reply=lv3_reply.replace('\\n','\n')
       lv4_reply=config.get('lv','lv4_reply')
-      lv4_reply=lv3_reply.replace('\\n','\n')
+      lv4_reply=lv4_reply.replace('\\n','\n')
       lv5_reply=config.get('lv','lv5_reply')
-      lv5_reply=lv3_reply.replace('\\n','\n')
+      lv5_reply=lv5_reply.replace('\\n','\n')
       logger.info('config.ini第二部分已成功加载')
       return a,b,c,d,e,f,g,h,i,j,lv1_reply,lv2_reply,lv3_reply,lv4_reply,lv5_reply
    except:
