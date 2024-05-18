@@ -1,17 +1,14 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,MessageEvent
 from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFilter
 from mirai_extensions.trigger.trigger import *
 from mirai_extensions.trigger import InterruptControl
+from mirai.exceptions import *
 from datetime import datetime 
 from typing import Tuple
 import pandas as pd      
 import random
 import os  
-import re  
-import shutil  
-import tempfile     
-import os  
-import re  
+import re    
 import shutil  
 import tempfile 
 import logging 
@@ -241,23 +238,28 @@ def write_str_love(qq, str_value, file_path='.\data\qq.txt'):
     
     updated = False    
     for i, line in enumerate(lines):    
-        if line.startswith(f'{qq}='):    
-            # 分割出 qq 后面的数字和字符串  
-            parts = line.split('=', 1)  # 只分割一次  
+        if f'{qq}=' in line:    
+            # 分割出 qq 后面的部分  
+            parts = line.split(f'{qq}=', 1)  # 只分割一次  
             if len(parts) > 1:  
-                # 假设 qq 后面的内容格式为 "数字 字符串"  
-                number_and_str = parts[1].strip()  # 去除前后空白  
-                if ' ' in number_and_str:  
-                    number, old_str = number_and_str.split(' ', 1)  # 分割数字和字符串  
+                # qq 后面的内容格式为 "数字 字符串"  
+                # 去除 qq= 后面的空白字符  
+                remaining_part = parts[1].strip()  
+                if ' ' in remaining_part:  
+                    # 分割数字和字符串  
+                    number, old_str = remaining_part.split(' ', 1)  
                     # 保留数字，替换字符串  
-                    new_line = f'{qq}={number} {str_value}\n'  
-                    lines[i] = new_line  
-                    updated = True  
-                    break  
+                    new_line = f'{qq}={number}{str_value}\n'  
+                else:  
+                    # 如果没有找到空格，直接替换整个部分  
+                    new_line = f'{qq}={remaining_part}{str_value}\n'  
+                lines[i] = new_line  
+                updated = True  
+                break  # 只需要更新第一个匹配项，跳出循环  
     
     if not updated:    
         # 如果没有找到匹配的行，添加新行  
-        lines.append(f'{qq}= {str_value}\n')  # 假设 qq 后面默认有一个空格  
+        lines.append(f'{qq}={0}{str_value}\n')  #  qq 后面默认有一个空格  
     
     with open(file_path, 'w', encoding='utf-8') as file:    
         file.writelines(lines)
@@ -696,23 +698,24 @@ async def sadxchjw(event: GroupMessage):
                    await bot.send(event,[At(int(qq)),'\n'+lv1_need_reply])
                elif lv==2:
                    lv2_need_reply=lv2_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
-                   await bot.send(event,[At(int(qq)),'\n'+lv2_need_reply])
                    lv2_need_reply=replace_alias(lv2_need_reply)
+                   await bot.send(event,[At(int(qq)),'\n'+lv2_need_reply])
                elif lv==3:
                    lv3_need_reply=lv3_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
-                   await bot.send(event,[At(int(qq)),'\n'+lv3_need_reply])
                    lv3_need_reply=replace_alias(lv3_need_reply)
+                   await bot.send(event,[At(int(qq)),'\n'+lv3_need_reply])
                elif lv==4:
                    lv4_need_reply=lv4_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
-                   await bot.send(event,[At(int(qq)),'\n'+lv4_need_reply])
                    lv4_need_reply=replace_alias(lv4_need_reply)
+                   await bot.send(event,[At(int(qq)),'\n'+lv4_need_reply])
+                   
                elif lv==5:
                    lv5_need_reply=lv5_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
-                   await bot.send(event,[At(int(qq)),'\n'+lv5_need_reply])
                    lv5_need_reply=replace_alias(lv5_need_reply)
+                   await bot.send(event,[At(int(qq)),'\n'+lv5_need_reply])
                else:
                    logger.warning('好感等级未能覆盖所有用户')
-                   if int_love <= 0:
+                   if int_love <= La:
                        await bot.send(event,bot_name+'不想理你\n'+str_love)
                    else:
                        await bot.send(event,bot_name+'很中意你\n'+str_love)
