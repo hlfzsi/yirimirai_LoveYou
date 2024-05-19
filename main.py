@@ -3,6 +3,8 @@ from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFil
 from mirai_extensions.trigger.trigger import *
 from mirai_extensions.trigger import InterruptControl
 from mirai.exceptions import *
+#import snownlp
+import math
 from datetime import datetime 
 from typing import Tuple
 import pandas as pd      
@@ -19,7 +21,7 @@ import configparser
 import requests
 import string
 
-py_version='v1.30-beta1'
+py_version='v1.30-beta2'
 
 #RL快速方法正则式
 WEIGHTED_CHOICE_PATTERN = re.compile(  
@@ -94,10 +96,14 @@ def loadconfig():
    rate=config.getfloat('random_CG','rate')
    master=config.get('others','master')
    lv_enable=config.get('lv','enable')
+   common_love= config.get('csv','common_love')
+   a, b = (value.strip() for value in common_love.split(','))
    logger.info('config.ini第一部分已成功加载')
-   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable
+   a=int(a)
+   b=int(b)
+   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b
 
-bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable=loadconfig()
+bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb=loadconfig()
 #logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
   
 def get_range(value):  
@@ -196,6 +202,50 @@ except:
     logger.warning('未连接到网络,无法检查更新')
 time.sleep(3)
 
+def map_sentiment_to_range(sentiment_score, target_min=-10, target_max=10):  
+    # 线性映射函数，但调整斜率使得中间区域变化小，极端值变化大  
+    if sentiment_score >= 0.54:  
+        # 正面情感，使用较缓的斜率  
+        mapped_score = (sentiment_score - 0.5) * 2 * (target_max - target_min) + target_min + (target_max - target_min) / 2.41  
+    elif sentiment_score<= 0.46:
+        mapped_score = (sentiment_score - 0.6) * 2 * (target_max - target_min) + target_min + (target_max - target_min) / 2.41  
+    else: 
+        mapped_score = (sentiment_score - 0.5) * 2 * (target_max - target_min) + target_min + (target_max - target_min) / 2.41
+      
+    # 确保值在目标范围内  
+    mapped_score = max(min(mapped_score, target_max), target_min)  
+    return mapped_score  
+  
+def add_random_fluctuation(score, target_min, target_max):  
+    # 添加一个固定的随机波动在[-1, 1]范围内  
+    fluctuation = random.uniform(-1, 1)  
+    fluctuated_score = max(min(score + fluctuation, target_max), target_min)  # 确保值在目标范围内  
+    return fluctuated_score  
+
+def adjust_score_if_high(score,threshold ,deduction_range):  
+    # 如果得分大于等于阈值，则随机减去一个整数  
+    if score >= threshold:  
+        deduction = random.randint(deduction_range[0], deduction_range[1])  
+        score -= deduction 
+        score=math.floor(score)    
+    return score 
+'''
+def love_score(text, target_min=-10, target_max=10):  
+    # 使用 SnowNLP 分析文本情感倾向  
+    s = snownlp.SnowNLP(text)  
+    sentiment_score = s.sentiments  
+      
+    # 映射情感倾向  
+    mapped_score = map_sentiment_to_range(sentiment_score, target_min, target_max)  
+      
+    # 添加随机波动  
+    fluctuated_score = add_random_fluctuation(mapped_score, target_min, target_max)  
+    final_score = adjust_score_if_high(fluctuated_score, 7, [2, 7])
+    final_score=int(final_score)  
+      
+    # 返回结果  
+    return final_score  
+'''
 def generate_codes(a, b):
     if b==0:
           filename='./data/alias_code.txt'
@@ -557,11 +607,11 @@ def extract_numbers_from_string_iterative(s):
     return ''.join(result)  
   
 def read_txt(qq, filename='./data/qq.txt'):
-    int_love = None
+    int_love = 0
     str_love = None
 
-    # 尝试读取和修改文件
-    with open(filename, 'r+', encoding='utf-8') as file:
+    # 尝试读取文件
+    with open(filename, 'r', encoding='utf-8') as file:
         # 读取文件内容
         content = file.readlines()
         
@@ -583,10 +633,11 @@ def read_txt(qq, filename='./data/qq.txt'):
                 break  # 找到匹配项后退出循环
 
         # 如果没有找到匹配的qq，在文件末尾添加新条目
-        if str_love is None:
-            new_line = f'\n{qq}=0'
+    if str_love is None:
+        with open(filename, 'a', encoding='utf-8') as file:    
+            new_line = f'{qq}=0\n'
             file.write(new_line)  # 由于已经处于文件末尾，可以直接写入
-            str_love = '0'  # 设置str_love为新添加的数值
+            str_love = ''  # 设置str_love为新添加的数值
             int_love= 0
             logger.debug('已新增行')
     logger.debug('读取好感度完成')
@@ -674,7 +725,8 @@ async def bhrkhrt(event: GroupMessage):
                await bot.send(event,reply)
     except:
         pass
-
+    if love==0:
+        love=random.randint(Ca,Cb)
     if love != 0 and love!=None:
         update_txt(qq,love)
         logger.debug('已更新用户好感')
@@ -882,6 +934,19 @@ async def strqq(event: GroupMessage):
           msg=await inc.wait(T11,timeout=120)
           write_str_love(qq,' '+msg)
           await bot.send(event,'您的文本好感已设置为:'+msg+' 喵~')
+'''
+@bot.on(GroupMessage)
+async def fegsg(event: GroupMessage):
+    message=str(event.message_chain)
+    if bot_name in message or At(bot.qq) in event.message_chain:
+        qq=str(event.sender.id)
+        message=message.replace(bot_name,'')
+        love=love_score(message)
+        logger.debug('情感运算')
+        if love!=0:
+            update_txt(qq,love)
+            logger.debug(qq+'情感运算'+str(love))
+'''
 try:
        bot.run()
 except Exception:
