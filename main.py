@@ -3,7 +3,7 @@ from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFil
 from mirai_extensions.trigger.trigger import *
 from mirai_extensions.trigger import InterruptControl
 from mirai.exceptions import *
-#import snownlp
+import snownlp
 import math
 from datetime import datetime 
 from typing import Tuple
@@ -21,7 +21,7 @@ import configparser
 import requests
 import string
 
-py_version='v1.30-beta2'
+py_version='v1.30'
 
 #RL快速方法正则式
 WEIGHTED_CHOICE_PATTERN = re.compile(  
@@ -229,7 +229,7 @@ def adjust_score_if_high(score,threshold ,deduction_range):
         score -= deduction 
         score=math.floor(score)    
     return score 
-'''
+
 def love_score(text, target_min=-10, target_max=10):  
     # 使用 SnowNLP 分析文本情感倾向  
     s = snownlp.SnowNLP(text)  
@@ -245,7 +245,7 @@ def love_score(text, target_min=-10, target_max=10):
       
     # 返回结果  
     return final_score  
-'''
+
 def generate_codes(a, b):
     if b==0:
           filename='./data/alias_code.txt'
@@ -934,7 +934,7 @@ async def strqq(event: GroupMessage):
           msg=await inc.wait(T11,timeout=120)
           write_str_love(qq,' '+msg)
           await bot.send(event,'您的文本好感已设置为:'+msg+' 喵~')
-'''
+
 @bot.on(GroupMessage)
 async def fegsg(event: GroupMessage):
     message=str(event.message_chain)
@@ -946,7 +946,6 @@ async def fegsg(event: GroupMessage):
         if love!=0:
             update_txt(qq,love)
             logger.debug(qq+'情感运算'+str(love))
-'''
 try:
        bot.run()
 except Exception:
