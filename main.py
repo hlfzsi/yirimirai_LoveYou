@@ -1,4 +1,4 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice,Plain
 from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFilter
 from mirai_extensions.trigger import InterruptControl
 from collections import defaultdict
@@ -841,7 +841,41 @@ def read_love(qq):
             conn.commit()
             # 新增后默认返回0
             return 0
-
+        
+def read_love_only(qq):
+# 使用with语句确保连接在函数结束时被关闭
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        
+        # 尝试查询记录
+        cursor.execute("SELECT love FROM qq_love WHERE QQ=?", (qq,))
+        result = cursor.fetchone()
+        
+        # 如果记录存在，返回love的值
+        if result:
+            return result[0]
+        else:
+            return None
+        
+def read_txt_only(qq):
+# 初始化返回值
+    love=read_love_only(qq)
+    int_love = 0
+    str_love = ''
+    
+    # 检查qq是否在字典中
+    if qq in qq_dict:
+        # 如果qq在字典中，则将字典中对应的文本加在love后
+        str_love = str(love) + qq_dict[qq]
+    else:
+        # 如果qq不在字典中，则只将love转换为str类型
+        str_love = str(love)
+    
+    # 无论如何，都将love赋值给int_love
+    int_love = love
+    
+    # 返回两个值
+    return int_love, str_love
   
 def read_txt(qq):
 # 初始化返回值
@@ -1100,7 +1134,21 @@ async def sadxchjw(event: GroupMessage):
                time.sleep(5)
                sys.exit
 
-               
+
+@bot.on(GroupMessage)
+async def gegvsgverg(event:GroupMessage):
+    msg=str(event.message_chain)
+    if msg.startswith('查询好感'):
+       msg=msg.replace('查询好感','')
+       try:
+           msg=int(msg)
+           qq=str(msg)
+       except:
+           msg=event.message_chain.as_mirai_code()
+           msg=msg.replace('查询好感','')
+           qq=msg.replace('[mirai:at:','').replace(']','')
+       int_love,str_love=read_txt_only(qq)
+       await bot.send(event,qq+'的好感是:\n'+str_love+'\n喵~')
 
 
 @bot.on(GroupMessage)
