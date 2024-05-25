@@ -68,7 +68,7 @@
 **上述变量（[vary]除外）在好感回复中也适用；全部变量在群聊词库中适用**
 
 **实例**：效果同test行
-![test](vx_images/310221317258992.png "test示例" =1100x)
+![test](https://img2.imgtp.com/2024/05/25/S0QryhTK.PNG "test示例" =1100x)
 #### 群聊词库
 **群聊词库是全局词库的阉割**
 * 好感范围默认值为0，而非common_love
