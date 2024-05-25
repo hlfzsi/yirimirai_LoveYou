@@ -1,4 +1,4 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice,Plain
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice
 from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFilter
 from mirai_extensions.trigger import InterruptControl
 from collections import defaultdict
@@ -489,8 +489,6 @@ def write_str_love(qq, str_value, file_path='.\data\qq.txt'):
         file.seek(0)  
         file.writelines(new_lines)  
         file.truncate()  # 确保文件大小正确
-        global qq_dict
-        qq_dict=read_qq_txt_to_dict()
 
 def code_record(a):  
     # 获取当前时间，并格式化为字符串（精确到秒）  
@@ -804,8 +802,8 @@ def read_qq_txt_to_dict(file_path='./data/qq.txt'):
     with open(file_path, 'r',encoding ="utf-8") as file:
             # 逐行读取文件
             for line in file:
-                # 去除行尾的换行符和可能的空白字符
-                line = line.strip()
+                # 去除行尾的换行符
+                line = line.strip('')
                 
                 # 如果行不为空
                 if line:
@@ -886,7 +884,7 @@ def read_txt(qq):
     # 检查qq是否在字典中
     if qq in qq_dict:
         # 如果qq在字典中，则将字典中对应的文本加在love后
-        str_love = str(love) + qq_dict[qq]
+        str_love = str(love) +' '+ qq_dict[qq]
     else:
         # 如果qq不在字典中，则只将love转换为str类型
         str_love = str(love)
@@ -1148,6 +1146,7 @@ async def gegvsgverg(event:GroupMessage):
            msg=msg.replace('查询好感','')
            qq=msg.replace('[mirai:at:','').replace(']','')
        int_love,str_love=read_txt_only(qq)
+       qq=replace_alias(qq)
        await bot.send(event,qq+'的好感是:\n'+str_love+'\n喵~')
 
 
@@ -1298,19 +1297,21 @@ async def strqq(event: GroupMessage):
           logger.debug('code正确')
           qq=str(event.sender.id)
           code_record(qq+'使用'+message+'作为文本好感')
-          await bot.send(event,'请在120s内发送您要设置的文本好感喵~\n建议将一个空格置于文本好感前喵~')
+          await bot.send(event,'请在120s内发送您要设置的文本好感喵~')
           @GroupMessageFilter(group_member=event.sender)
           def T11(event_new: GroupMessage):
                   msg = str(event_new.message_chain)
                   return msg
           msg=await inc.wait(T11,timeout=120)
           write_str_love(qq,' '+msg)
+          read_qq_txt_to_dict()
           await bot.send(event,'您的文本好感已设置为:'+msg+' 喵~')
 
 @bot.on(GroupMessage)
 async def fegsg(event: GroupMessage):
     message=str(event.message_chain)
     if bot_name in message or At(bot.qq) in event.message_chain:
+      if message!=bot_name:
         a=new_msg_judge(message)
         if a==True:
            qq=str(event.sender.id)
