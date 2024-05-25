@@ -857,14 +857,15 @@ def read_love_only(qq):
         
 def read_txt_only(qq):
 # 初始化返回值
-    love=read_love_only(qq)
+  love=read_love_only(qq)
+  if love!=None:
     int_love = 0
     str_love = ''
     
     # 检查qq是否在字典中
     if qq in qq_dict:
         # 如果qq在字典中，则将字典中对应的文本加在love后
-        str_love = str(love) + qq_dict[qq]
+        str_love = str(love) + ' '+qq_dict[qq]
     else:
         # 如果qq不在字典中，则只将love转换为str类型
         str_love = str(love)
@@ -874,6 +875,8 @@ def read_txt_only(qq):
     
     # 返回两个值
     return int_love, str_love
+  else:
+    return None,None
   
 def read_txt(qq):
 # 初始化返回值
@@ -1146,8 +1149,11 @@ async def gegvsgverg(event:GroupMessage):
            msg=msg.replace('查询好感','')
            qq=msg.replace('[mirai:at:','').replace(']','')
        int_love,str_love=read_txt_only(qq)
-       qq=replace_alias(qq)
-       await bot.send(event,qq+'的好感是:\n'+str_love+'\n喵~')
+       if str_love!=None:
+         qq=replace_alias(qq)
+         await bot.send(event,qq+'的好感是:\n'+str_love+'\n喵~')
+       else:
+           await bot.send(event,'查无此人喵~')
 
 
 @bot.on(GroupMessage)
