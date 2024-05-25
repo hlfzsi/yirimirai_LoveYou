@@ -1,18 +1,17 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,MessageEvent
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice
 from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFilter
-from mirai_extensions.trigger.trigger import *
 from mirai_extensions.trigger import InterruptControl
-from mirai.exceptions import *
+from collections import defaultdict
+from datetime import datetime, timedelta
+from Levenshtein import distance
+import sqlite3
 import snownlp
 import math
-from datetime import datetime 
 from typing import Tuple
 import pandas as pd      
 import random
 import os  
 import re    
-import shutil  
-import tempfile 
 import logging 
 import colorlog
 import time
@@ -20,8 +19,12 @@ import sys
 import configparser
 import requests
 import string
+import json
 
-py_version='v1.30'
+py_version='v1.40'
+
+data_dir = './data/'
+db_path = os.path.join(data_dir, 'qq.db3')
 
 #RL快速方法正则式
 WEIGHTED_CHOICE_PATTERN = re.compile(  
@@ -71,6 +74,45 @@ except:
    logger.error('程序将在5秒后退出')
    time.sleep(5)
    sys.exit()
+logger.info('检查数据库...')
+# 检查data目录是否存在，如果不存在则创建
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
+
+# 连接到SQLite数据库
+conn = None
+try:
+    # 尝试连接数据库，如果文件不存在则会自动创建
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 检查表是否存在
+    cursor.execute('''
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table' AND name='qq_love';
+    ''')
+    table_exists = cursor.fetchone() is not None
+
+    # 如果表不存在，则创建表
+    if not table_exists:
+        cursor.execute('''
+            CREATE TABLE qq_love (
+                QQ TEXT PRIMARY KEY,
+                love INTEGER
+            );
+        ''')
+
+    # 提交事务
+    conn.commit()
+finally:
+    # 关闭数据库连接
+    if conn:
+        conn.close()
+logger.info('数据库检查完成')
+MAX_AGE = timedelta(minutes=15)  # 消息的有效时间为15分钟
+previous_msgs = defaultdict(datetime)
+groups_df = {} 
 
 
 def loadconfig():
@@ -193,14 +235,157 @@ try:
     py_update=(response.json()["tag_name"])
     if py_version==py_update:
         logger.info('当前已为最新版本'+py_version)
-    elif py_version.startswith(py_update+'-beta'):
-        logger.warning('当前为最新版本的beta版,程序并不绝对稳定')
+    elif 'beta' in py_version:
+        logger.warning('当前为beta版,程序并不稳定')
         logger.warning('前往https://github.com/hlfzsi/yirimirai_LoveYou/releases获得最新版')
     else:
         logger.warning('本项目有更新,请前往https://github.com/hlfzsi/yirimirai_LoveYou/releases\n'+'当前版本:'+py_version+'  最新版本:'+py_update)
 except:
     logger.warning('未连接到网络,无法检查更新')
 time.sleep(3)
+
+def del_admin(groupid, qq,filename='./data/admin.json'):  
+    admin_data = load_admin(filename) 
+  
+    # 检查groupid和common列表是否存在  
+    if groupid in admin_data and 'common' in admin_data[groupid]:  
+        if qq in admin_data[groupid]['common']:
+        # 尝试在common列表中删除qq  
+            admin_data[groupid]['common'].remove(qq)
+            with open(filename, 'w') as file:  
+                json.dump(admin_data, file, indent=4)
+        global admin_qqs
+        admin_qqs=load_admin()
+
+def del_admin_high(groupid, qq, filename='./data/admin.json'):  
+    admin_data = load_admin(filename) 
+  
+    # 检查groupid和high列表是否存在  
+    if groupid in admin_data and 'high' in admin_data[groupid]:  
+        # 检查qq是否在high列表中  
+        if qq in admin_data[groupid]['high']:  
+            # 尝试在high列表中删除qq  
+            admin_data[groupid]['high'].remove(qq)  
+            with open(filename, 'w') as file:  
+               json.dump(admin_data, file, indent=4)
+            global admin_qqs
+            admin_qqs=load_admin()
+    
+
+def load_admin(filename='./data/admin.json'):  
+    try:  
+        with open(filename, 'r') as file:  
+            data = json.load(file)  
+        return data  
+    except FileNotFoundError:  
+        return {}  # 如果没有找到文件，返回一个空字典 
+admin_qqs=load_admin()
+     
+  
+def write_admin( groupid, type_, qq,filename='./data/admin.json'):  
+    admin_data = load_admin(filename)  
+  
+    # 检查groupid是否存在  
+    if groupid not in admin_data:  
+        # 如果不存在，则新建groupid，并初始化high和common列表  
+        admin_data[groupid] = {  
+            'high': [],  
+            'common': []  
+        }  
+  
+    # 检查type_是否有效  
+    if type_ not in ['high', 'common']:  
+        raise ValueError("Invalid type. It should be 'high' or 'common'.")  
+  
+    # 将qq添加到对应type_的列表中  
+    admin_data[groupid][type_].append(qq)  
+  
+    # 将更新后的数据写回JSON文件  
+    with open(filename, 'w') as file:  
+        json.dump(admin_data, file, indent=4)
+    global admin_qqs
+    admin_qqs=load_admin()
+
+def check_admin(groupid, qq):  
+    # 遍历每个groupid的数据  
+    for group in admin_qqs:  
+        if groupid in admin_qqs:  
+            # 检查high列表  
+            if qq in admin_qqs[groupid]['high']:  
+               return 'high'  
+            elif qq in admin_qqs[groupid]['common']:  
+               return 'common'   
+    # 如果qq在所有的groupid下都没有找到，返回False  
+    return False
+
+def group_load(groupid):  
+    # 构造文件路径  
+    file_path = os.path.join('./data/group', f"{groupid}.csv")  
+      
+    # 如果文件存在，读取CSV到DataFrame  
+    if os.path.exists(file_path):  
+        df = pd.read_csv(file_path)  
+        # 将DataFrame添加到全局字典中，以groupid为键  
+        groups_df[groupid] = df   
+
+def group_write(groupid, question, answer):  
+    # 构造文件路径  
+    base_path = './data/group'    
+    file_path = os.path.join(base_path, f"{groupid}.csv")  
+      
+    # 如果文件不存在，创建一个空的DataFrame  
+    if not os.path.exists(file_path):  
+        df = pd.DataFrame(columns=['Question', 'Answer','Love','Range'])  
+    else:  
+        # 如果文件存在，读取它  
+        df = pd.read_csv(file_path)  
+      
+    # 将新的数据添加到DataFrame中  
+    new_row = pd.DataFrame([[question, answer,'','']],columns=['Question', 'Answer','Love','Range'])
+    df = pd.concat([df, new_row], ignore_index=True)  
+      
+    # 将DataFrame写入CSV文件  
+    df.to_csv(file_path, index=False)
+    group_load(groupid)
+    logger.debug('写入成功')
+
+def group_del(groupid, question): 
+    # 构造文件路径  
+    file_path = os.path.join('./data/group', f"{groupid}.csv")  
+      
+    # 如果文件存在，读取它  
+    if os.path.exists(file_path):  
+        df = pd.read_csv(file_path)  
+          
+        # 找到与question完全匹配的行并删除它们  
+        mask = df['Question'] != question  
+        df = df[mask]  
+          
+        # 将修改后的DataFrame写回CSV文件  
+        df.to_csv(file_path, index=False)
+        group_load(groupid)
+        logger.debug('删除成功')  
+    else:  
+        logger.warning(f"{file_path}不存在")
+
+def new_msg_judge(msg, threshold=2):  # 可以设置编辑距离的阈值来确定何时两个字符串被认为是“高度相似”
+    # 检查msg是否与先前传入的任何msg高度相似
+    for prev_msg, timestamp in list(previous_msgs.items()):
+        if (datetime.now() - timestamp) < MAX_AGE:
+            # 计算编辑距离
+            lev_distance = distance(msg, prev_msg)
+            if lev_distance <= threshold:
+                return False  # 如果找到高度相似的msg且在MAX_AGE内，返回False
+
+    # 如果msg是新的，或者与先前的msg不高度相似，将其添加到字典中
+    previous_msgs[msg] = datetime.now()
+    # 清理过期的消息
+    current_time = datetime.now()
+    for prev_msg, timestamp in list(previous_msgs.items()):
+        if (current_time - timestamp) >= MAX_AGE:
+            del previous_msgs[prev_msg]
+
+    return True  # 如果msg是新的或与先前的msg不高度相似，返回True
 
 def map_sentiment_to_range(sentiment_score, target_min=-10, target_max=10):  
     # 线性映射函数，但调整斜率使得中间区域变化小，极端值变化大  
@@ -282,37 +467,30 @@ def generate_codes(a, b):
             file.write(code + '\n')
 
 def write_str_love(qq, str_value, file_path='.\data\qq.txt'):   
-    lines = []    
-    with open(file_path, 'r', encoding='utf-8') as file:    
-        lines = file.readlines()    
-    
-    updated = False    
-    for i, line in enumerate(lines):    
-        if f'{qq}=' in line:    
-            # 分割出 qq 后面的部分  
-            parts = line.split(f'{qq}=', 1)  # 只分割一次  
-            if len(parts) > 1:  
-                # qq 后面的内容格式为 "数字 字符串"  
-                # 去除 qq= 后面的空白字符  
-                remaining_part = parts[1].strip()  
-                if ' ' in remaining_part:  
-                    # 分割数字和字符串  
-                    number, old_str = remaining_part.split(' ', 1)  
-                    # 保留数字，替换字符串  
-                    new_line = f'{qq}={number}{str_value}\n'  
-                else:  
-                    # 如果没有找到空格，直接替换整个部分  
-                    new_line = f'{qq}={remaining_part}{str_value}\n'  
-                lines[i] = new_line  
+    with open(file_path, 'r+', encoding='utf-8') as file:  
+        lines = file.readlines()  
+        updated = False  
+        new_lines = []  
+        for line in lines:  
+            line = line.strip()  # 移除行尾的换行符和可能的空白字符  
+            if line.startswith(qq + '='):  
+                # 如果找到匹配的qq，则更新它并标记为已更新  
+                new_lines.append(f"{qq}={str_value}\n")  
                 updated = True  
-                break  # 只需要更新第一个匹配项，跳出循环  
-    
-    if not updated:    
-        # 如果没有找到匹配的行，添加新行  
-        lines.append(f'{qq}={0}{str_value}\n')  #  qq 后面默认有一个空格  
-    
-    with open(file_path, 'w', encoding='utf-8') as file:    
-        file.writelines(lines)
+            else:  
+                # 否则保留原行  
+                new_lines.append(line + '\n')  
+          
+        # 如果qq不存在于文件中，则添加新行  
+        if not updated:  
+            new_lines.append(f"{qq}={str_value}\n")  
+          
+        # 回到文件开头并写入所有行  
+        file.seek(0)  
+        file.writelines(new_lines)  
+        file.truncate()  # 确保文件大小正确
+        global qq_dict
+        qq_dict=read_qq_txt_to_dict()
 
 def code_record(a):  
     # 获取当前时间，并格式化为字符串（精确到秒）  
@@ -508,44 +686,26 @@ def check_love_code(code_to_check, filename='./data/love_code.txt'):
         return True  
     return False 
 
-def update_txt(qq, hgbh, txt_filename='./data/qq.txt'):    
-  
-    # 读取文件的所有行到列表中  
-    with open(txt_filename, 'r', encoding='utf-8') as file:  
-        lines = file.readlines()  
-  
-    # 使用临时文件来避免直接覆盖原文件  
-    with tempfile.NamedTemporaryFile('w', encoding='utf-8', delete=False) as temp_file:  
-        updated = False  
-        for line in lines:  
-            if line.strip().startswith(f'{qq}='):  
-                match = re.search(r'{qq}=(\d+)(.*)$'.format(qq=qq), line)  
-                if match:  
-                    number = int(match.group(1)) + hgbh  
-                    new_line = f'\n{qq}={number}{match.group(2)}'  
-                    temp_file.write(new_line)  
-                    updated = True  
-                else:  
-                    temp_file.write(line)  
-            else:  
-                temp_file.write(line)  
-  
-        # 如果未更新，则添加新行  
-        if not updated:  
-            temp_file.write(f'{qq}={hgbh}\n') 
-            logger.debug('新行已添加') 
-  
-    # 使用shutil来替换原文件，确保原子操作  
-    shutil.move(temp_file.name, txt_filename)  
-  
-    # 清理临时文件（如果函数成功执行）  
-    try:  
-        os.remove(temp_file.name)
-        logger.debug('清理临时文件')  
-    except OSError as e:  
-        logger.debug(f"Error: {e.strerror} : {temp_file.name}")
-        logger.debug('已清理')
-  
+def update_txt(qq,love_to_add):    
+# 连接到SQLite数据库
+    with sqlite3.connect(db_path) as conn:
+        # 创建一个游标对象
+        cursor = conn.cursor()
+        
+        # 构造一个SQL语句，用于查找并更新
+        update_sql = "UPDATE qq_love SET love = love + ? WHERE QQ = ?"
+        
+        # 尝试执行更新操作
+        cursor.execute(update_sql, (love_to_add, qq))
+        
+        # 如果没有匹配的行被更新（即没有找到匹配的QQ），则插入新记录
+        if cursor.rowcount == 0:
+            insert_sql = "INSERT INTO qq_love (QQ, love) VALUES (?, ?)"
+            cursor.execute(insert_sql, (qq, love_to_add))
+        
+        # 提交事务
+        conn.commit()
+ 
 def change_txt(search_term, m):  
     
     # 筛选匹配第一列的行      
@@ -590,88 +750,162 @@ def change_txt(search_term, m):
     logger.debug('完成回复配对')
     return reply, love      
 
-def extract_numbers_from_string_iterative(s):  
-# 初始化结果列表和索引  
-    result = []  
-    i = 0  
-    # 遍历字符串中的每个字符  
-    while i < len(s):  
-        # 如果字符是数字，添加到结果列表中  
-        if s[i].isdigit():  
-            result.append(s[i])  
-        # 如果字符不是数字，或者已经到达字符串末尾，退出循环  
-        else:  
-            break  
-        i += 1  
-    # 将结果列表转换为字符串并返回  
-    return ''.join(result)  
+def groups_reply(groupid,search_term, m):  
+ if groupid in groups_df:
+    df=groups_df[groupid]
+    # 筛选匹配第一列的行      
+    matches = df[df.iloc[:, 0] == search_term]      
   
-def read_txt(qq, filename='./data/qq.txt'):
-    int_love = 0
-    str_love = None
+    # 过滤掉第四列(c, d)范围不包含m的行，并处理空值    
+    def is_m_in_range(row):    
+        cd_str = str(row.iloc[3])    
+        if cd_str.strip() == "nan":  # 如果为空值或空字符串，则认为m符合范围    
+            return True    
+        try:    
+            c, d = map(int, cd_str.strip('()').split(','))    
+            return c <= m <= d  # 检查 m 是否在 (c, d) 范围内    
+        except ValueError:  # 如果无法转换为整数    
+            return False      
+  
+    # 假设 matches 是一个pandas DataFrame，且第四列是字符串形式的范围，如"(1, 5)"    
+    # 或者第四列可能包含空值或无法转换为整数的字符串    
+    valid_matches = matches.apply(is_m_in_range, axis=1)  
+    valid_matches = matches[valid_matches]  
+  
+    # 如果没有找到匹配的行，返回None      
+    if valid_matches.empty:      
+        return None, None      
+    
+    # 从有效匹配中随机选择一行      
+    chosen_row = valid_matches.sample(n=1).iloc[0]      
+    
+    # 读取第二列作为reply，如果为空则跳过    
+    reply = chosen_row.iloc[1] if pd.notnull(chosen_row.iloc[1]) else None    
+    
+    # 读取第三列(a, b)范围，并在范围内随机选择一个整数作为love，处理空值    
+    ab_str = str(chosen_row.iloc[2])    
+    if ab_str.strip() == "":  # 如果为空字符串    
+        love = 0    
+    else:    
+        try:    
+            a, b = map(int, ab_str.strip('()').split(','))    
+            love = random.randint(a, b)    
+        except ValueError:  # 如果无法转换为整数    
+            love = 0    
+    logger.debug('完成群聊回复配对')
+    return reply, love   
+ else:
+    return None,0
 
-    # 尝试读取文件
-    with open(filename, 'r', encoding='utf-8') as file:
-        # 读取文件内容
-        content = file.readlines()
+qq_dict={}
+def read_qq_txt_to_dict(file_path='./data/qq.txt'):
+    # 创建一个空字典来存储键值对
+    global qq_dict
+    with open(file_path, 'r',encoding ="utf-8") as file:
+            # 逐行读取文件
+            for line in file:
+                # 去除行尾的换行符和可能的空白字符
+                line = line.strip()
+                
+                # 如果行不为空
+                if line:
+                    # 尝试使用'='来分割键和值
+                    key_value = line.split('=', 1)  # 使用1来确保只分割一次
+                    
+                    # 检查是否成功分割
+                    if len(key_value) == 2:
+                        key = key_value[0].strip()
+                        value = key_value[1].strip()
+                        
+                        # 将键值对添加到字典中
+                        # 如果键已存在，此操作将覆盖原有值
+                        qq_dict[key] = value
+read_qq_txt_to_dict()
+
+def read_love(qq):
+# 使用with语句确保连接在函数结束时被关闭
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
         
-        # 检查是否有匹配的qq
-        for line in content:
-            if line.startswith(qq + '='):
-                # 提取等号之后的内容
-                value = line.split('=')[1].strip()
-                # 尝试将内容转换为整数
-                try:
-                    int_love = int(extract_numbers_from_string_iterative(value))
-                except ValueError:
-                    # 如果不能转换为整数，则只将文本赋值给str_love
-                    str_love = value
-                    int_love = 0
-                else:
-                    # 如果能转换为整数，同时赋值给str_love
-                    str_love = value
-                break  # 找到匹配项后退出循环
+        # 尝试查询记录
+        cursor.execute("SELECT love FROM qq_love WHERE QQ=?", (qq,))
+        result = cursor.fetchone()
+        
+        # 如果记录存在，返回love的值
+        if result:
+            return result[0]
+        else:
+            # 如果记录不存在，插入新记录
+            cursor.execute("INSERT INTO qq_love (QQ, love) VALUES (?, 0)", (qq,))
+            # 提交事务
+            conn.commit()
+            # 新增后默认返回0
+            return 0
 
-        # 如果没有找到匹配的qq，在文件末尾添加新条目
-    if str_love is None:
-        with open(filename, 'a', encoding='utf-8') as file:    
-            new_line = f'{qq}=0\n'
-            file.write(new_line)  # 由于已经处于文件末尾，可以直接写入
-            str_love = ''  # 设置str_love为新添加的数值
-            int_love= 0
-            logger.debug('已新增行')
-    logger.debug('读取好感度完成')
-    return int_love, str_love       
+  
+def read_txt(qq):
+# 初始化返回值
+    love=read_love(qq)
+    int_love = 0
+    str_love = ''
+    
+    # 检查qq是否在字典中
+    if qq in qq_dict:
+        # 如果qq在字典中，则将字典中对应的文本加在love后
+        str_love = str(love) + qq_dict[qq]
+    else:
+        # 如果qq不在字典中，则只将love转换为str类型
+        str_love = str(love)
+    
+    # 无论如何，都将love赋值给int_love
+    int_love = love
+    
+    # 返回两个值
+    return int_love, str_love
 
-def GlobalCompare(filename='./data/qq.txt'):  
-    # 创建一个字典来存储b值和a函数的第二个返回值  
-    b_values = {}  
-      
-    # 读取文件  
-    with open(filename, 'r', encoding='utf-8') as file:  
-        lines = file.readlines()  
-      
-    # 处理每一行  
-    for line in lines:  
-        if '=' in line:  
-            key, value = line.strip().split('=', 1)  
-            try:  
-                b_value = key
-                # 调用a函数并获取返回值  
-                first_result, second_result = read_txt(b_value)  
-                # 将b值和a函数的第二个返回值存储在字典中
-                b_values[b_value] = second_result  
-            except ValueError:  
-                # 如果键不是整数，则忽略这一行  
-                continue  
-      
-    # 根据a函数的第一个返回值对b值进行排序（降序）  
-    sorted_b_values = sorted(b_values.items(), key=lambda x: read_txt(x[0])[0], reverse=True)  
-      
-    # 提取前十个最大的b值及其对应的a函数的第二个返回值  
-    top_ten_b_values = [f'{b}'+' : '+ second_result for b, second_result in sorted_b_values[:10]]  
-      
-    return top_ten_b_values
+def read_csv_files_to_global_dict(directory = './data/group'):    
+    # 遍历目录中的所有文件  
+    for filename in os.listdir(directory):  
+        # 检查文件是否为CSV文件  
+        if filename.endswith('.csv'):  
+            # 去除后缀以获取groupid  
+            groupid = os.path.splitext(filename)[0]  
+            # 构造文件路径  
+            file_path = os.path.join(directory, filename)  
+            # 读取CSV文件到DataFrame  
+            df = pd.read_csv(file_path)  
+            # 将DataFrame添加到全局字典中，以groupid为键  
+            groups_df[groupid] = df
+read_csv_files_to_global_dict()
+
+def GlobalCompare():   
+    try:  
+        # 连接到SQLite数据库  
+        conn = sqlite3.connect(db_path)  
+        cursor = conn.cursor()  
+          
+        # 编写SQL查询语句  
+        sql = "SELECT QQ FROM qq_love ORDER BY love DESC LIMIT 10"  
+          
+        # 执行SQL查询  
+        cursor.execute(sql)  
+          
+        # 获取查询结果  
+        qq_list = [row[0] for row in cursor.fetchall()]  
+          
+        # 返回结果列表  
+        return qq_list  
+    except sqlite3.Error as e:  
+        # 如果出现错误，打印错误信息并返回空列表  
+        print(f"An error occurred: {e.args[0]}")  
+        return []  
+    finally:  
+        # 确保游标和连接都被关闭  
+        if cursor:    
+                cursor.close()  
+        if conn:  
+            conn.close()
+
 
 if __name__ == '__main__':
     bot = Mirai(
@@ -715,7 +949,7 @@ async def bhrkhrt(event: GroupMessage):
             else:
               await bot.send(event,i)
             time.sleep(1)
-        elif reply!='None':
+        elif reply!='None' and reply!=None:
             reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
             reply=replace_alias(reply)
             reply,pic=pic_support(reply)
@@ -723,13 +957,102 @@ async def bhrkhrt(event: GroupMessage):
                await bot.send(event,[reply,Image(path='.\data\pic\\'+pic)])
             else:
                await bot.send(event,reply)
+        if love==0:
+            love=random.randint(Ca,Cb)
     except:
         pass
-    if love==0:
-        love=random.randint(Ca,Cb)
+
+    if reply==None or reply=="None":       #群聊词库支持
+        groupid=str(event.sender.group.id)
+        reply,love=groups_reply(groupid,message,int_love)
+        try:
+           if reply==None:
+            raise Exception
+           reply=str(reply)
+           if reply.startswith('RL'): #RL快速方法
+              reply=reply.replace('RL','')
+              reply,love=RL_support(reply)
+              love=0
+              logger.debug('RL '+reply)
+           try:
+               love = int(love)
+           except:
+               love = int(0)
+           if '[cut]' in reply:
+               reply_list = reply.split('[cut]')
+               print(reply_list)
+               for i in reply_list:
+                 i=i.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
+                 i=replace_alias(i)
+                 i,pic=pic_support(i)
+                 logger.debug('cut '+i+'\n'+pic)
+                 if pic != None:
+                    await bot.send(event,[i,Image(path='.\data\pic\\'+pic)])
+                 else:
+                    await bot.send(event,i)
+               time.sleep(1)
+           elif reply!='None' and reply!=None:
+               reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('[vary]',str(love)).replace('\\n','\n')
+               reply=replace_alias(reply)
+               reply,pic=pic_support(reply)
+               if pic != None:
+                await bot.send(event,[reply,Image(path='.\data\pic\group\\'+pic)])
+               else:
+                await bot.send(event,reply)
+        except:
+            pass
+
     if love != 0 and love!=None:
         update_txt(qq,love)
         logger.debug('已更新用户好感')
+
+@bot.on(GroupMessage)
+async def ffwsfcs(event: GroupMessage):
+    msg =str(event.message_chain)
+    groupid=str(event.sender.group.id)
+    qq=str(event.sender.id)
+    if msg.startswith('/set senior '):
+        if qq==master:
+            msg=msg.replace('/set senior ','')
+            write_admin(groupid,'high',msg)
+            await bot.send(event,'成功设置高管喵~')
+            logger.debug('设置'+msg+'为'+groupid+'高管')
+    elif msg.startswith('/set admin '):
+        a=check_admin(groupid,qq)
+        if qq==master or a=='high':
+            msg=msg.replace('/set admin ','')
+            write_admin(groupid,'common',msg)
+            await bot.send(event,'成功设置管理喵~')
+            logger.debug('设置'+msg+'为'+groupid+'管理')
+    elif msg.startswith('/del admin '):
+        a=check_admin(groupid,qq)
+        if qq==master or a=='high':
+            msg=msg.replace('/del admin ','')
+            del_admin(groupid,msg)
+            await bot.send(event,'成功取消管理喵~')
+            logger.debug('取消'+msg+'为'+groupid+'管理')
+    elif msg.startswith('/del senior '):
+        if qq==master:
+            msg=msg.replace('/del senior ','')
+            del_admin_high(groupid,msg)
+            await bot.send(event,'成功取消高管喵~')
+            logger.debug('取消'+msg+'为'+groupid+'高管')
+    elif msg.startswith('删除 '):
+        a=check_admin(groupid,qq)
+        if qq==master or a!=False:
+            question=msg.replace('删除 ','')
+            group_del(groupid,question)
+            await bot.send(event,'成功删除回复喵~')
+    elif msg.startswith('精确问 '):
+        a=check_admin(groupid,qq)
+        if qq==master or a!=False:
+            msg=msg.replace('精确问 ','')
+            msg=msg.split(' ',1)
+            question=msg[0]
+            answer=msg[1]
+            group_write(groupid,question,answer)
+            await bot.send(event,'成功设置回复喵~')
+            logger.debug('写入新回复')
 
 @bot.on(GroupMessage)
 async def sadxchjw(event: GroupMessage):
@@ -870,10 +1193,11 @@ async def dewcfvew(event: GroupMessage):
     global reply_b
     reply_b=str('好♡感♡排♡行\n')
     if str(event.message_chain) =='好感排行':
-        qq_list=GlobalCompare  
-        for item in qq_list():
-            a=str(item)   
-            reply_b=reply_b+a+'\n'
+        qq_list=GlobalCompare()  
+        for i in qq_list:
+            a=str(i)
+            _,love=read_txt(i)   
+            reply_b=reply_b+a+':'+love+'\n'
         reply_b=replace_alias(reply_b)
         await bot.send(event,reply_b + '--------\n喵呜~~~')
 
@@ -926,7 +1250,7 @@ async def strqq(event: GroupMessage):
           logger.debug('code正确')
           qq=str(event.sender.id)
           code_record(qq+'使用'+message+'作为文本好感')
-          await bot.send(event,'请在120s内发送您要设置的文本好感喵~')
+          await bot.send(event,'请在120s内发送您要设置的文本好感喵~\n建议将一个空格置于文本好感前喵~')
           @GroupMessageFilter(group_member=event.sender)
           def T11(event_new: GroupMessage):
                   msg = str(event_new.message_chain)
@@ -939,13 +1263,17 @@ async def strqq(event: GroupMessage):
 async def fegsg(event: GroupMessage):
     message=str(event.message_chain)
     if bot_name in message or At(bot.qq) in event.message_chain:
-        qq=str(event.sender.id)
-        message=message.replace(bot_name,'')
-        love=love_score(message)
-        logger.debug('情感运算')
-        if love!=0:
-            update_txt(qq,love)
-            logger.debug(qq+'情感运算'+str(love))
+        a=new_msg_judge(message)
+        if a==True:
+           qq=str(event.sender.id)
+           message=message.replace(bot_name,'')
+           love=love_score(message)
+           logger.debug('情感运算')
+           if love!=0:
+              update_txt(qq,love)
+              logger.debug(qq+'情感运算'+str(love))
+        else:
+            logger.debug('重复消息')
 try:
        bot.run()
 except Exception:
