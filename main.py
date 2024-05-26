@@ -1,4 +1,4 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice,Event
 from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFilter
 from mirai_extensions.trigger import InterruptControl
 from collections import defaultdict
@@ -140,12 +140,13 @@ def loadconfig():
    lv_enable=config.get('lv','enable')
    common_love= config.get('csv','common_love')
    a, b = (value.strip() for value in common_love.split(','))
+   search_love=config.get('others','search_love_reply')
    logger.info('config.ini第一部分已成功加载')
    a=int(a)
    b=int(b)
-   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b
+   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b,search_love
 
-bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb=loadconfig()
+bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb,search_love_reply=loadconfig()
 #logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
   
 def get_range(value):  
@@ -275,10 +276,10 @@ def del_admin_high(groupid, qq, filename='./data/admin.json'):
 def load_admin(filename='./data/admin.json'):  
     try:  
         with open(filename, 'r') as file:  
-            data = json.load(file)  
+            data = json.load(file,strict=False)  
         return data  
-    except FileNotFoundError:  
-        return {}  # 如果没有找到文件，返回一个空字典 
+    except:  
+        return {}  
 admin_qqs=load_admin()
      
   
@@ -1150,8 +1151,18 @@ async def gegvsgverg(event:GroupMessage):
            qq=msg.replace('[mirai:at:','').replace(']','')
        int_love,str_love=read_txt_only(qq)
        if str_love!=None:
+         global search_love_reply
+         reply=search_love_reply
+         name=await bot.get_group_member(event.group.id,int(qq))
+         try:
+           name=name.member_name
+         except:
+           name=''
+         if name==None:
+             name=''
          qq=replace_alias(qq)
-         await bot.send(event,qq+'的好感是:\n'+str_love+'\n喵~')
+         reply=reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name).replace('\\n','\n')
+         await bot.send(event,reply)
        else:
            await bot.send(event,'查无此人喵~')
 
@@ -1250,7 +1261,7 @@ async def dewcfvew(event: GroupMessage):
         for i in qq_list:
             a=str(i)
             _,love=read_txt(i)   
-            reply_b=reply_b+a+':'+love+'\n'
+            reply_b=reply_b+a+' : '+love+'\n'
         reply_b=replace_alias(reply_b)
         await bot.send(event,reply_b + '--------\n喵呜~~~')
 
