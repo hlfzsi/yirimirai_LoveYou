@@ -20,8 +20,11 @@ import configparser
 import requests
 import string
 import json
+import asyncio
+import inspect
+import websockets
 
-py_version='v1.40'
+py_version='v1.41'
 
 data_dir = './data/'
 db_path = os.path.join(data_dir, 'qq.db3')
@@ -141,12 +144,15 @@ def loadconfig():
    common_love= config.get('csv','common_love')
    a, b = (value.strip() for value in common_love.split(','))
    search_love=config.get('others','search_love_reply')
+   ws=config.get('others','ws')
+   react=config.get('others','@_react')
+   ws_port=config.getint('others','ws_port')
    logger.info('config.ini第一部分已成功加载')
    a=int(a)
    b=int(b)
-   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b,search_love
+   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b,search_love,ws,react,ws_port
 
-bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb,search_love_reply=loadconfig()
+bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb,search_love_reply,ws,botreact,ws_port=loadconfig()
 #logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
   
 def get_range(value):  
@@ -685,7 +691,7 @@ def check_love_code(code_to_check, filename='./data/love_code.txt'):
         return True  
     return False 
 
-def update_txt(qq,love_to_add):    
+def update_txt(qq,love):    
 # 连接到SQLite数据库
     with sqlite3.connect(db_path) as conn:
         # 创建一个游标对象
@@ -695,16 +701,36 @@ def update_txt(qq,love_to_add):
         update_sql = "UPDATE qq_love SET love = love + ? WHERE QQ = ?"
         
         # 尝试执行更新操作
-        cursor.execute(update_sql, (love_to_add, qq))
+        cursor.execute(update_sql, (love, qq))
         
         # 如果没有匹配的行被更新（即没有找到匹配的QQ），则插入新记录
         if cursor.rowcount == 0:
             insert_sql = "INSERT INTO qq_love (QQ, love) VALUES (?, ?)"
-            cursor.execute(insert_sql, (qq, love_to_add))
+            cursor.execute(insert_sql, (qq, love))
         
         # 提交事务
         conn.commit()
- 
+
+def ws_change_love(qq,love):
+  try:
+    qq=str(qq)
+    love=int(love)
+    update_txt(qq,love)
+    return 'DONE'
+  except:
+      return 'Fail'
+
+def ws_load_love(qq):
+  try:
+    qq=str(qq)
+    int_love,str_love=read_txt_only(qq)
+    if int_love!=None:
+        return str(int_love)+'|||' +str_love
+    else:
+        return 'None'
+  except:
+        return 'Fail'
+
 def change_txt(search_term, m):  
     
     # 筛选匹配第一列的行      
@@ -1340,6 +1366,56 @@ async def fegsg(event: GroupMessage):
               logger.debug(qq+'情感运算'+str(love))
         else:
             logger.debug('重复消息')
+
+
+if ws==True:
+    # 函数注册表
+    function_registry = {
+    "get_love": ws_load_love, #需要qq
+    "change_love": ws_change_love #需要qq和love
+ }
+
+    # 辅助函数，用于检查参数并调用函数
+    def call_function(func, data):
+       sig = inspect.signature(func)
+       bound_args = sig.bind(**data)
+       bound_args.apply_defaults()
+       try:
+          return func(*bound_args.args, **bound_args.kwargs)
+       except TypeError as e:
+          print(f"Invalid parameters for function {func.__name__}: {e}")
+          return "error: invalid parameters"
+
+    async def websocket_handler(websocket, path):
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+                function_type = data.get("type")
+            
+                if function_type in function_registry:
+                   func = function_registry[function_type]
+                   result = call_function(func, {k: v for k, v in data.items() if k != "type"})
+                   await websocket.send(result)
+                else:
+                   await websocket.send("Unknown function type")
+                
+            except json.JSONDecodeError:
+                 await websocket.send("Invalid JSON")
+
+    # 启动WebSocket服务器
+    async def start_server():
+         async with websockets.serve(websocket_handler, "localhost", ws_port) as server:
+          logger.info('ws运行在'+ws_port)
+          await server.wait_closed()
+
+    # 运行事件循环
+    asyncio.get_event_loop().run_until_complete(start_server())
+
+
+
+
+
+
 try:
        bot.run()
 except Exception:
