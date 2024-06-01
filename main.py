@@ -4,8 +4,11 @@ from mirai_extensions.trigger import InterruptControl
 from collections import defaultdict
 from datetime import datetime, timedelta
 from Levenshtein import distance
+import jieba
 import sqlite3
 import snownlp
+import threading
+import urllib
 import math
 from typing import Tuple
 import pandas as pd      
@@ -113,7 +116,7 @@ finally:
     if conn:
         conn.close()
 logger.info('数据库检查完成')
-MAX_AGE = timedelta(minutes=15)  # 消息的有效时间为15分钟
+MAX_AGE = timedelta(minutes=10)  # 消息的有效时间为10分钟
 previous_msgs = defaultdict(datetime)
 groups_df = {} 
 
@@ -154,7 +157,7 @@ def loadconfig():
 
 bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb,search_love_reply,ws,botreact,ws_port=loadconfig()
 #logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
-  
+
 def get_range(value):  
     if La <= value < Lb: 
         logger.debug('获得lv1') 
@@ -250,6 +253,11 @@ try:
 except:
     logger.warning('未连接到网络,无法检查更新')
 time.sleep(3)
+
+async def qingyunke(msg):
+    url = 'http://api.qingyunke.com/api.php?key=free&appid=0&msg={}'.format(urllib.parse.quote(msg))
+    html = requests.get(url)
+    return html.json()["content"]
 
 def del_admin(groupid, qq,filename='./data/admin.json'):  
     admin_data = load_admin(filename) 
@@ -375,24 +383,34 @@ def group_del(groupid, question):
     else:  
         logger.warning(f"{file_path}不存在")
 
-def new_msg_judge(msg, threshold=2):  # 可以设置编辑距离的阈值来确定何时两个字符串被认为是“高度相似”
-    # 检查msg是否与先前传入的任何msg高度相似
-    for prev_msg, timestamp in list(previous_msgs.items()):
-        if (datetime.now() - timestamp) < MAX_AGE:
-            # 计算编辑距离
-            lev_distance = distance(msg, prev_msg)
-            if lev_distance <= threshold:
-                return False  # 如果找到高度相似的msg且在MAX_AGE内，返回False
+def jaccard_similarity(list1, list2):  
+    intersection = len(set(list1).intersection(set(list2)))  
+    union = len(set(list1)) + len(set(list2)) - intersection  
+    return intersection / union if union else 0
 
-    # 如果msg是新的，或者与先前的msg不高度相似，将其添加到字典中
-    previous_msgs[msg] = datetime.now()
-    # 清理过期的消息
-    current_time = datetime.now()
-    for prev_msg, timestamp in list(previous_msgs.items()):
-        if (current_time - timestamp) >= MAX_AGE:
-            del previous_msgs[prev_msg]
+def tokenize(text):    
+    return list(jieba.cut(text, cut_all=False)) 
 
-    return True  # 如果msg是新的或与先前的msg不高度相似，返回True
+def new_msg_judge(msg, jaccard_threshold=0.75):  # 可以设置编辑距离的阈值来确定何时两个字符串被认为是“高度相似”
+# 使用结巴库进行分词  
+    tokens = tokenize(msg)  
+  
+    # 清理过期的消息  
+    current_time = datetime.now()  
+    for prev_msg, timestamp in list(previous_msgs.items()):  
+        if (current_time - timestamp) >= MAX_AGE:  
+            del previous_msgs[prev_msg]  
+  
+    # 检查当前消息是否与先前的消息高度相似  
+    for prev_msg, timestamp in previous_msgs.items():  
+        prev_tokens = tokenize(prev_msg)  
+        jaccard_sim = jaccard_similarity(tokens, prev_tokens)  
+        if jaccard_sim >= jaccard_threshold:  
+            return False  # 如果找到高度相似的msg且在MAX_AGE内，返回False  
+  
+    # 如果没有找到高度相似的msg，将其添加到previous_msgs字典中  
+    previous_msgs[msg] = datetime.now()  
+    return True
 
 def map_sentiment_to_range(sentiment_score, target_min=-10, target_max=10):  
     # 线性映射函数，但调整斜率使得中间区域变化小，极端值变化大  
@@ -969,6 +987,8 @@ def GlobalCompare():
             conn.close()
 
 
+
+
 if __name__ == '__main__':
     bot = Mirai(
         qq=bot_qq, # 改成你的机器人的 QQ 号
@@ -1353,8 +1373,11 @@ async def strqq(event: GroupMessage):
 @bot.on(GroupMessage)
 async def fegsg(event: GroupMessage):
     message=str(event.message_chain)
+    reply=None
     if bot_name in message or At(bot.qq) in event.message_chain:
       if message!=bot_name:
+        if At(bot.qq) in event.message_chain and botreact=='True':
+            reply=await qingyunke(message)
         a=new_msg_judge(message)
         if a==True:
            qq=str(event.sender.id)
@@ -1364,29 +1387,38 @@ async def fegsg(event: GroupMessage):
            if love!=0:
               update_txt(qq,love)
               logger.debug(qq+'情感运算'+str(love))
+           if reply!=None:
+               reply=str(reply)
+               reply=reply.replace('菲菲',bot_name)
+               await bot.send(event,reply,True)
         else:
             logger.debug('重复消息')
+        
 
 
-if ws==True:
+
+
+
+
+ #if ws=='Ture':
     # 函数注册表
-    function_registry = {
-    "get_love": ws_load_love, #需要qq
-    "change_love": ws_change_love #需要qq和love
+function_registry = {
+"get_love": ws_load_love, #需要qq
+"change_love": ws_change_love #需要qq和love
  }
 
     # 辅助函数，用于检查参数并调用函数
-    def call_function(func, data):
+def call_function(func, data):
        sig = inspect.signature(func)
        bound_args = sig.bind(**data)
        bound_args.apply_defaults()
        try:
           return func(*bound_args.args, **bound_args.kwargs)
        except TypeError as e:
-          print(f"Invalid parameters for function {func.__name__}: {e}")
+          logger.warning(f"Invalid parameters for function {func.__name__}: {e}")
           return "error: invalid parameters"
 
-    async def websocket_handler(websocket, path):
+async def websocket_handler(websocket):
         async for message in websocket:
             try:
                 data = json.loads(message)
@@ -1403,15 +1435,17 @@ if ws==True:
                  await websocket.send("Invalid JSON")
 
     # 启动WebSocket服务器
-    async def start_server():
+async def start_server():
          async with websockets.serve(websocket_handler, "localhost", ws_port) as server:
-          logger.info('ws运行在'+ws_port)
+          logger.info('ws运行在'+str(ws_port))
           await server.wait_closed()
-
-    # 运行事件循环
-    asyncio.get_event_loop().run_until_complete(start_server())
-
-
+def real_start_server():
+    loop = asyncio.new_event_loop()  
+    asyncio.set_event_loop(loop)  
+    loop.run_until_complete(start_server())  
+    loop.close() 
+ws_thread = threading.Thread(target=real_start_server)  
+ws_thread.start()
 
 
 
