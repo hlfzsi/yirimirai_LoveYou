@@ -128,38 +128,36 @@ groups_df = {}
 
 def loadconfig():
    # 读取配置文件
-   fp_dir = os.getcwd() #取得的是exe文件路径
-   path = os.path.join(fp_dir, "config.ini") #拼接上配置文件名称目录  
-   try:
-      config.read(path,encoding='utf-8')
-      logger.info('正在加载config.ini') 
-   except :
-      logger.error('无法加载config.ini,请检查文件是否存在或填写格式是否正确')
-      logger.error('程序将在5秒后退出')
-      time.sleep(5)
-      sys.exit
-
+    config_path = os.path.join(os.getcwd(), "config.ini")
+    try:
+        with open(config_path, "r", encoding='utf-8') as config_file:
+            config.read_file(config_file)
+            logger.info('正在加载config.ini')
+    except FileNotFoundError:
+        logger.error('无法加载config.ini，请检查文件是否存在或格式是否正确')
+        time.sleep(5)
+        sys.exit(1)
    # 获取配置项的值  
-   bot_qq = config.get('bot', 'bot_qq')  
-   verify_key = config.get('bot', 'verify_key')  
-   host = config.get('bot', 'host')  
-   port = config.get('bot', 'port')
-   bot_name=config.get('others','bot_name')
-   baseline=config.getint('random_CG','baseline')
-   rate=config.getfloat('random_CG','rate')
-   master=config.get('others','master')
-   lv_enable=config.get('lv','enable')
-   common_love= config.get('csv','common_love')
-   a, b = (value.strip() for value in common_love.split(','))
-   search_love=config.get('others','search_love_reply')
-   ws=config.get('others','ws')
-   react=config.get('others','@_react')
-   ws_port=config.getint('others','ws_port')
-   logger.info('config.ini第一部分已成功加载')
-   a=int(a)
-   b=int(b)
-   return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b,search_love,ws,react,ws_port
-
+    bot_qq = config.get('bot', 'bot_qq')  
+    verify_key = config.get('bot', 'verify_key')  
+    host = config.get('bot', 'host')  
+    port = config.get('bot', 'port')
+    bot_name=config.get('others','bot_name')
+    baseline=config.getint('random_CG','baseline')
+    rate=config.getfloat('random_CG','rate')
+    master=config.get('others','master')
+    lv_enable=config.get('lv','enable')
+    common_love= config.get('csv','common_love')
+    a, b = (value.strip() for value in common_love.split(','))
+    search_love=config.get('others','search_love_reply')
+    ws=config.get('others','ws')
+    react=config.get('others','@_react')
+    ws_port=config.getint('others','ws_port')
+    logger.info('config.ini第一部分已成功加载')
+    a=int(a)
+    b=int(b)
+    return  bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,a,b,search_love,ws,react,ws_port
+ 
 bot_qq,verify_key,host,port,bot_name,baseline,rate,master,lv_enable,Ca,Cb,search_love_reply,ws,botreact,ws_port=loadconfig()
 #logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
 
@@ -186,38 +184,38 @@ def get_range(value):
 
 def loadconfig_part2():
    # 读取配置文件
-   fp_dir = os.getcwd() #取得的是exe文件路径
-   path = os.path.join(fp_dir, "config.ini") #拼接上配置文件名称目录  
-   try:
-      config.read(path,encoding='utf-8')
-      logger.info('正在加载第二部分config.ini')
-      lv1= config.get('lv','lv1')
-      a, b = (value.strip() for value in lv1.split(','))
-      lv2= config.get('lv','lv2')
-      c, d = (value.strip() for value in lv2.split(','))
-      lv3= config.get('lv','lv3')
-      e, f = (value.strip() for value in lv3.split(','))
-      lv4= config.get('lv','lv4')
-      g, h = (value.strip() for value in lv4.split(','))
-      lv5= config.get('lv','lv5')
-      i, j = (value.strip() for value in lv5.split(','))
-      lv1_reply=config.get('lv','lv1_reply')
-      lv1_reply=lv1_reply.replace('\\n','\n')
-      lv2_reply=config.get('lv','lv2_reply')
-      lv2_reply=lv2_reply.replace('\\n','\n')
-      lv3_reply=config.get('lv','lv3_reply')
-      lv3_reply=lv3_reply.replace('\\n','\n')
-      lv4_reply=config.get('lv','lv4_reply')
-      lv4_reply=lv4_reply.replace('\\n','\n')
-      lv5_reply=config.get('lv','lv5_reply')
-      lv5_reply=lv5_reply.replace('\\n','\n')
-      logger.info('config.ini第二部分已成功加载')
-      return a,b,c,d,e,f,g,h,i,j,lv1_reply,lv2_reply,lv3_reply,lv4_reply,lv5_reply
-   except:
-      logger.error('无法加载config.ini,请检查文件是否存在或填写格式是否正确')
-      logger.error('程序将在5秒后退出')
-      time.sleep(5)
-      sys.exit       
+    config_path = os.path.join(os.getcwd(), "config.ini")
+    try:
+        with open(config_path, "r", encoding='utf-8') as config_file:
+            config.read_file(config_file)
+            logger.info('正在加载config.ini')
+    except FileNotFoundError:
+        logger.error('无法加载config.ini，请检查文件是否存在或格式是否正确')
+        time.sleep(5)
+        sys.exit(1)
+    logger.info('正在加载第二部分config.ini')
+    lv1= config.get('lv','lv1')
+    a, b = (value.strip() for value in lv1.split(','))
+    lv2= config.get('lv','lv2')
+    c, d = (value.strip() for value in lv2.split(','))
+    lv3= config.get('lv','lv3')
+    e, f = (value.strip() for value in lv3.split(','))
+    lv4= config.get('lv','lv4')
+    g, h = (value.strip() for value in lv4.split(','))
+    lv5= config.get('lv','lv5')
+    i, j = (value.strip() for value in lv5.split(','))
+    lv1_reply=config.get('lv','lv1_reply')
+    lv1_reply=lv1_reply.replace('\\n','\n')
+    lv2_reply=config.get('lv','lv2_reply')
+    lv2_reply=lv2_reply.replace('\\n','\n')
+    lv3_reply=config.get('lv','lv3_reply')
+    lv3_reply=lv3_reply.replace('\\n','\n')
+    lv4_reply=config.get('lv','lv4_reply')
+    lv4_reply=lv4_reply.replace('\\n','\n')
+    lv5_reply=config.get('lv','lv5_reply')
+    lv5_reply=lv5_reply.replace('\\n','\n')
+    logger.info('config.ini第二部分已成功加载')
+    return a,b,c,d,e,f,g,h,i,j,lv1_reply,lv2_reply,lv3_reply,lv4_reply,lv5_reply
 
 if lv_enable=='True':
    logger.info('初始化好感等级...')
