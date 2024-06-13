@@ -1,21 +1,25 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At,Voice,Event
+from mirai import Mirai, WebSocketAdapter, GroupMessage,Image,FriendMessage,At
 from mirai_extensions.trigger.message import GroupMessageFilter,FriendMessageFilter
 from mirai_extensions.trigger import InterruptControl
+from PIL import  ImageDraw, ImageFont
+from io import BytesIO
 from collections import defaultdict
 from datetime import datetime, timedelta
-from Levenshtein import distance
+import base64
 import jieba
 import sqlite3
 import snownlp
 import threading
 import urllib
+from pathlib import Path
 import math
 from typing import Tuple
-import pandas as pd      
+import pandas as pd
+import logging    
 import random
 import os  
+import io
 import re    
-import logging 
 import colorlog
 import time
 import sys
@@ -27,7 +31,7 @@ import asyncio
 import inspect
 import websockets
 
-py_version='v1.41'
+py_version='v1.42'
 
 data_dir = './data/'
 db_path = os.path.join(data_dir, 'qq.db3')
@@ -73,7 +77,7 @@ logger.info('-by hlfzsi')
 time.sleep(1)
 logger.info('正在加载reply.csv')
 try:
-   df = pd.read_csv(csv_path, header=None)  # 假设没有列名，使用header=None
+   df = pd.read_csv(csv_path, header=None)
    logger.info('reply.csv已成功加载')
 except:
    logger.error('未能成功读取reply.csv,请确认文件是否存在')
@@ -115,6 +119,7 @@ finally:
     # 关闭数据库连接
     if conn:
         conn.close()
+del conn
 logger.info('数据库检查完成')
 MAX_AGE = timedelta(minutes=10)  # 消息的有效时间为10分钟
 previous_msgs = defaultdict(datetime)
@@ -252,7 +257,132 @@ try:
         logger.warning('本项目有更新,请前往https://github.com/hlfzsi/yirimirai_LoveYou/releases\n'+'当前版本:'+py_version+'  最新版本:'+py_update)
 except:
     logger.warning('未连接到网络,无法检查更新')
+del py_update
+del py_version
 time.sleep(3)
+
+def choose_pic(qq, images_dir='./data/images/'):
+    """
+    从给定路径下取出以qq为文件名的图片（不论后缀如何），
+    如果不存在，取出default.jpg。
+
+    参数:
+    qq (str): 文件名（不包括后缀）
+    images_dir (str, optional): 图片所在的目录路径。
+
+    返回:
+    str: 匹配的图片文件路径或default.jpg的路径
+    """
+    # 将路径转换为Path对象，以便使用Path方法
+    images_dir = Path(images_dir)
+    
+    # 遍历目录以查找匹配的文件
+    for file in images_dir.iterdir():
+        # 如果文件名（不包括后缀）与qq匹配
+        if file.stem == qq:
+            # 返回匹配的文件路径
+            return str(file)
+    
+    # 如果没有找到匹配的文件，返回default.jpg的路径
+    logger.warning('没有找到匹配的文件，返回default.jpg')
+    return str(images_dir / 'default.jpg')
+
+
+def pic_reply(qq,name,background_path, ico): 
+    from PIL import Image 
+    int_love,str_love=read_txt(qq)
+    def sentence():
+       ci = random.choice('abcdefghijkl')
+       url = "https://v1.hitokoto.cn/?c="+ ci +"&encode=text"
+       r = requests.post(url)
+       return r.text
+    sen=sentence()
+    def part_cover(image):  
+    # 创建一个与原图大小相同的RGBA图片，用于存放结果  
+     result = image.copy().convert('RGBA')  
+  
+    # 创建一个与蒙版大小相同的白色（带有50%透明度的）蒙版  
+     mask = Image.new('RGBA', (1000, 1000), (255, 255, 255, 128))  # 128 = 50% 透明度  
+  
+    # 将蒙版粘贴到结果图片的中心位置  
+     result.paste(mask, (12, 12, 1012, 1012), mask)  
+  
+     return result
+    def is_image_file(filename):
+    # 判断一个文件名是否为图片文件
+       return any(filename.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.bmp'])
+    def pick_pic(path, number):
+        # 构造对应number的文件夹路径
+        folder_path = os.path.join(path, str(number))
+        # 获取文件夹中的所有文件和子目录
+        files = os.listdir(folder_path)
+    
+        # 过滤出图片文件
+        image_files = [os.path.join(folder_path, f) for f in files if is_image_file(f)]
+    
+        # 如果没有图片文件，则返回一个错误消息
+        if not image_files:
+          logger.error('无对应贴画可供使用')
+    
+        # 随机选择一个图片文件
+        chosen_image = random.choice(image_files)
+    
+        # 返回完整图片路径
+        return chosen_image
+    def add_cartoon(bg, cartoon):  
+       # 随机选择一个位置放置cartoon  
+       left = random.randint(0, 689)  
+       top = random.randint(0, 689)  
+      
+       # 在bg图片上粘贴cartoon图片  
+       bg.paste(cartoon, (left, top), cartoon)  
+      
+       # 返回结果图片  
+       return bg
+
+
+    # 打开背景图片  
+    background = Image.open(background_path) 
+    background = background.resize((1024, 1024), Image.LANCZOS)
+    lv=get_range(int_love) 
+    if lv==None and int_love>0:
+        lv=5
+        lv_r='Nan'
+    elif lv==None and int_love<=0:
+        lv=1
+        lv_r='Nan'
+    else:
+        lv_r=str(lv)
+    # 打开图标图片     
+    response = requests.get(ico)  
+    image_bytes = response.content  
+    ico = Image.open(BytesIO(image_bytes))
+    cartoon=pick_pic('./data/images/cartoon/',lv)
+    cartoon=Image.open(cartoon)
+    # 缩放图标到325x325像素 
+    ico = ico.resize((325, 325), Image.LANCZOS)
+    cartoon=cartoon.resize((335,335),Image.LANCZOS)
+    cartoon=cartoon.convert('RGBA')
+    background=background.convert('RGBA')
+    background.paste(ico, (590, 75))    
+    background=add_cartoon(background,cartoon)
+    background=part_cover(background)
+    draw = ImageDraw.Draw(background)
+    
+    # 加载字体   
+    font = ImageFont.truetype('arial.ttf', 60)  
+    font2= ImageFont.truetype('arial.ttf', 75)
+    draw.text((19, 100),name, font=font2, fill=(128,118,105))  
+    draw.text((19, 354),'好感等级:Lv.'+lv_r, font=font, fill=(244,27,90))
+    draw.text((19, 508),'好感度:'+str_love, font=font, fill=(244,27,90))
+    senl=sen.replace(',','，').replace('.','。').replace('，',',\n').replace('。','。\n')
+    draw.text((75, 662),senl, font=font, fill=(0,0,0))  
+    background = background.convert('RGB')
+    buffered=io.BytesIO()
+    background.save(buffered,format='JPEG')
+    result = buffered.getvalue()
+    result  = base64.b64encode(result)
+    return result 
 
 async def qingyunke(msg):
     url = 'http://api.qingyunke.com/api.php?key=free&appid=0&msg={}'.format(urllib.parse.quote(msg))
@@ -391,7 +521,7 @@ def jaccard_similarity(list1, list2):
 def tokenize(text):    
     return list(jieba.cut(text, cut_all=False)) 
 
-def new_msg_judge(msg, jaccard_threshold=0.75):  # 可以设置编辑距离的阈值来确定何时两个字符串被认为是“高度相似”
+def new_msg_judge(msg, jaccard_threshold=0.75):  
 # 使用结巴库进行分词  
     tokens = tokenize(msg)  
   
@@ -440,6 +570,14 @@ def adjust_score_if_high(score,threshold ,deduction_range):
         score=math.floor(score)    
     return score 
 
+def adjust_score_if_low(score,threshold ,deduction_range):  
+    # 如果得分小于等于阈值，则随机加上一个整数  
+    if score <= threshold:  
+        deduction = random.randint(deduction_range[0], deduction_range[1])  
+        score += deduction 
+        score=math.floor(score)    
+    return score 
+
 def love_score(text, target_min=-10, target_max=10):  
     # 使用 SnowNLP 分析文本情感倾向  
     s = snownlp.SnowNLP(text)  
@@ -450,7 +588,8 @@ def love_score(text, target_min=-10, target_max=10):
       
     # 添加随机波动  
     fluctuated_score = add_random_fluctuation(mapped_score, target_min, target_max)  
-    final_score = adjust_score_if_high(fluctuated_score, 7, [2, 7])
+    fluctuated_score = adjust_score_if_high(fluctuated_score, 7, [0, 7])
+    final_score=adjust_score_if_low(fluctuated_score,-7, [0, 7])
     final_score=int(final_score)  
       
     # 返回结果  
@@ -461,6 +600,8 @@ def generate_codes(a, b):
           filename='./data/alias_code.txt'
     elif b==1:
           filename='./data/love_code.txt'
+    elif b==2:
+          filename='./data/pic_code.txt'
     # 字符集，包含大小写字母和数字  
     characters = string.ascii_letters + string.digits  
       
@@ -509,6 +650,30 @@ def write_str_love(qq, str_value, file_path='.\data\qq.txt'):
         # 如果qq不存在于文件中，则添加新行  
         if not updated:  
             new_lines.append(f"{qq}={str_value}\n")  
+          
+        # 回到文件开头并写入所有行  
+        file.seek(0)  
+        file.writelines(new_lines)  
+        file.truncate()  # 确保文件大小正确
+
+def write_pic(qq, pic, file_path='.\data\pic.txt'):   
+    with open(file_path, 'r+', encoding='utf-8') as file:  
+        lines = file.readlines()  
+        updated = False  
+        new_lines = []  
+        for line in lines:  
+            line = line.strip()  # 移除行尾的换行符和可能的空白字符  
+            if line.startswith(qq + '='):  
+                # 如果找到匹配的qq，则更新它并标记为已更新  
+                new_lines.append(f"{qq}={pic}\n")  
+                updated = True  
+            else:  
+                # 否则保留原行  
+                new_lines.append(line + '\n')  
+          
+        # 如果qq不存在于文件中，则添加新行  
+        if not updated:  
+            new_lines.append(f"{qq}={pic}\n")  
           
         # 回到文件开头并写入所有行  
         file.seek(0)  
@@ -702,12 +867,34 @@ def write_codes_love(codes, filename='./data/love_code.txt'):
             file.write(code + '\n')  
   
 def check_love_code(code_to_check, filename='./data/love_code.txt'):  
-    codes = read_codes(filename)  
+    codes = read_codes_love(filename)  
     if code_to_check in codes:  
         codes.remove(code_to_check)  
         write_codes_love(codes, filename)  
         return True  
     return False 
+
+def read_codes_pic(filename='./data/pic_code.txt'):  
+    try:  
+        with open(filename, 'r', encoding='utf-8') as file:  
+            codes = file.read().splitlines()  
+        return codes  
+    except FileNotFoundError:  
+        print(f"文件 {filename} 未找到。")  
+        return []  
+  
+def write_codes_pic(codes, filename='./data/pic_code.txt'):  
+    with open(filename, 'w', encoding='utf-8') as file:  
+        for code in codes:  
+            file.write(code + '\n')  
+  
+def check_pic_code(code_to_check, filename='./data/pic_code.txt'):  
+    codes = read_codes_pic(filename)  
+    if code_to_check in codes:  
+        codes.remove(code_to_check)  
+        write_codes_pic(codes, filename)  
+        return True  
+    return False
 
 def update_txt(qq,love):    
 # 连接到SQLite数据库
@@ -864,9 +1051,32 @@ def read_qq_txt_to_dict(file_path='./data/qq.txt'):
                         # 如果键已存在，此操作将覆盖原有值
                         qq_dict[key] = value
 read_qq_txt_to_dict()
+pic_dict={}
+def read_pic_to_dict(file_path='./data/pic.txt'):
+    # 创建一个空字典来存储键值对
+    global pic_dict
+    with open(file_path, 'r',encoding ="utf-8") as file:
+            # 逐行读取文件
+            for line in file:
+                # 去除行尾的换行符
+                line = line.strip('')
+                
+                # 如果行不为空
+                if line:
+                    # 尝试使用'='来分割键和值
+                    key_value = line.split('=', 1)  # 使用1来确保只分割一次
+                    
+                    # 检查是否成功分割
+                    if len(key_value) == 2:
+                        key = key_value[0].strip()
+                        value = key_value[1].strip()
+                        
+                        # 将键值对添加到字典中
+                        # 如果键已存在，此操作将覆盖原有值
+                        pic_dict[key] = value
+read_pic_to_dict()
 
 def read_love(qq):
-# 使用with语句确保连接在函数结束时被关闭
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         
@@ -953,7 +1163,7 @@ def read_csv_files_to_global_dict(directory = './data/group'):
             # 构造文件路径  
             file_path = os.path.join(directory, filename)  
             # 读取CSV文件到DataFrame  
-            df = pd.read_csv(file_path)  
+            df = pd.read_csv(file_path)
             # 将DataFrame添加到全局字典中，以groupid为键  
             groups_df[groupid] = df
 read_csv_files_to_global_dict()
@@ -986,7 +1196,23 @@ def GlobalCompare():
         if conn:  
             conn.close()
 
-
+def get_low_ten_qqs():  
+    # 连接到数据库  
+    conn = sqlite3.connect(db_path)  
+    cursor = conn.cursor()  
+      
+    # 执行 SQL 查询语句  
+    query = "SELECT qq FROM qq_love ORDER BY love ASC LIMIT 10"  
+    cursor.execute(query)  
+      
+    # 获取查询结果，并转换为列表  
+    top_ten_qqs = [row[0] for row in cursor.fetchall()]  
+      
+    # 关闭数据库连接  
+    conn.close()  
+      
+    # 返回结果列表  
+    return top_ten_qqs
 
 
 if __name__ == '__main__':
@@ -1149,7 +1375,12 @@ async def sadxchjw(event: GroupMessage):
                name=str(name)
                lv=get_range(int_love)
                logger.debug('用户好感等级'+str(lv))
-               if lv==1:
+               if qq in pic_dict:
+                   ico=event.sender.get_avatar_url()
+                   path=choose_pic(qq)
+                   pic=pic_reply(qq,name,path,ico)
+                   await bot.send(event,Image(base64=pic),True)
+               elif lv==1:
                    lv1_need_reply=lv1_reply.replace('[qq]',qq).replace('[sender]',name).replace('[intlove]',str(int_love)).replace('[love]',str_love).replace('[bot]',bot_name)
                    lv1_need_reply=replace_alias(lv1_need_reply)
                    await bot.send(event,[At(int(qq)),'\n'+lv1_need_reply])
@@ -1289,21 +1520,50 @@ async def hhhhhh(event: FriendMessage):
                 msg=int(msg)
                 generate_codes(msg,b)
                 await bot.send(event,'生成完毕')
-                logger.debug('alias_code生成完毕')
+                logger.debug('love_code生成完毕')
             except:
                 await bot.send(event,'数值不合法')
-                logger.debug('alias_code生成失败')
+                logger.debug('love_code生成失败')
         elif c==False:
             await bot.send(event,'已取消code生成')
-            logger.debug('alias_code取消生成')
+            logger.debug('love_code取消生成')
+    elif qq == master and msg.startswith('/encode pic '):
+        msg=msg.replace('/encode pic ','')
+        b=int(2)
+        await bot.send(event,'确认无误请回复"确认"')
+        logger.debug('pic_code生成中')
+        @FriendMessageFilter(friend=event.sender)
+        def T7(event_new: FriendMessage):
+            msg2 = str(event_new.message_chain)
+            if msg2=='确认':
+                return True
+            else:
+                return False
+        c=await inc.wait(T7,timeout=120)
+        if c==True:
+            try:
+                msg=int(msg)
+                generate_codes(msg,b)
+                await bot.send(event,'生成完毕')
+                logger.debug('pic_code生成完毕')
+            except:
+                await bot.send(event,'数值不合法')
+                logger.debug('pic_code生成失败')
+        elif c==False:
+            await bot.send(event,'已取消code生成')
+            logger.debug('pic_code取消生成')
 
 
 @bot.on(GroupMessage)
 async def dewcfvew(event: GroupMessage):
     global reply_b
+    qq_list=None
     reply_b=str('好♡感♡排♡行\n')
     if str(event.message_chain) =='好感排行':
         qq_list=GlobalCompare()  
+    elif str(event.message_chain)=='好人榜':
+        qq_list=get_low_ten_qqs()
+    if qq_list!=None:
         for i in qq_list:
             a=str(i)
             _,love=read_txt(i)   
@@ -1371,6 +1631,28 @@ async def strqq(event: GroupMessage):
           await bot.send(event,'您的文本好感已设置为:'+msg+' 喵~')
 
 @bot.on(GroupMessage)
+async def picqq(event: GroupMessage):
+    message=str(event.message_chain)
+    if message.startswith('/code pic '):
+        message=message.replace('/code pic ','')
+        b=check_pic_code(message)
+        if b==True:
+          logger.debug('code正确')
+          qq=str(event.sender.id)
+          code_record(qq+'使用'+message+'作为pic')
+          await bot.send(event,'请在120s内发送您要设置的图片喵~')
+          @GroupMessageFilter(group_member=event.sender)
+          def T12(event_new: GroupMessage):
+                  if Image in event_new.message_chain:
+                     image = event_new.message_chain[Image][0]
+                     return image
+          image=await inc.wait(T12,timeout=120)
+          await image.download(filename='./data/images/'+qq+'.jpeg')
+          write_pic(qq,'1')
+          read_pic_to_dict()
+          await bot.send(event,'您的pic已设置喵~',True)
+
+@bot.on(GroupMessage)
 async def fegsg(event: GroupMessage):
     message=str(event.message_chain)
     reply=None
@@ -1394,11 +1676,6 @@ async def fegsg(event: GroupMessage):
         else:
             logger.debug('重复消息')
         
-
-
-
-
-
 
  #if ws=='Ture':
     # 函数注册表
@@ -1436,9 +1713,13 @@ async def websocket_handler(websocket):
 
     # 启动WebSocket服务器
 async def start_server():
-         async with websockets.serve(websocket_handler, "localhost", ws_port) as server:
-          logger.info('ws运行在'+str(ws_port))
-          await server.wait_closed()
+         global stop_future  
+         stop_future = asyncio.get_event_loop().create_future()  
+         while True:
+           async with websockets.serve(websocket_handler, "localhost", ws_port) as server:
+            logger.info('ws运行在'+str(ws_port))
+            await server.wait_closed()
+
 def real_start_server():
     loop = asyncio.new_event_loop()  
     asyncio.set_event_loop(loop)  
@@ -1447,11 +1728,21 @@ def real_start_server():
 ws_thread = threading.Thread(target=real_start_server)  
 ws_thread.start()
 
-
-
-
+retry=False
 try:
-       bot.run()
+    logger.info('Ciallo～(∠・ω< )⌒★')
+    bot.run()
 except Exception:
-        logger.error(Exception)
-        input("按任意键退出")
+    logger.warning('无法连接到mirai,当前仅启用ws。15s后尝试重连。')
+    retry=True
+    time.sleep(15)
+try:
+   while retry==True:
+       try:
+          logger.info('Ciallo～(∠・ω< )⌒★')
+          bot.run()
+       except Exception:
+          logger.warning('无法连接到mirai。30s后尝试重连。')
+          time.sleep(30)
+except KeyboardInterrupt:
+    logger.info('取消重连尝试,现仅启用ws')
