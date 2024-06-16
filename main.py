@@ -81,7 +81,7 @@ time.sleep(1)
 logger.info('正在加载reply.csv')
 try:
     df = pd.read_csv(csv_path, header=None,dtype=str)
-    df.iloc[:, 4] = df.iloc[:, 4].fillna(1)
+    df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
     logger.info('reply.csv已成功加载')
 except:
     logger.error('未能成功读取reply.csv,请确认文件是否存在')
@@ -506,10 +506,9 @@ def group_load(groupid):
 
     # 如果文件存在，读取CSV到DataFrame
     if os.path.exists(file_path):
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path,dtype=str)
         # 将DataFrame添加到全局字典中，以groupid为键
         groups_df[groupid] = df
-
 
 def group_write(groupid:str, question:str, answer:str, type:str):
     '''
@@ -1039,7 +1038,6 @@ def change_txt(search_term:str, m:int)->Tuple[str,int]:
     Args:
         search_term (str): 需要匹配的内容
         m (int): 用户的数值好感度
-
     Returns:
         Tuple[str,int]: 回复,好感变化值
     """    
@@ -1102,7 +1100,7 @@ def groups_reply(groupid, search_term, m):
     """ 
     if groupid in groups_df:
         df = groups_df[groupid]
-        df.iloc[:, 4] = df.iloc[:, 4].fillna(1)
+        df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
         # 筛选匹配第一列的行
         matches = df[(df.iloc[:, 4] == '1') & (df.iloc[:, 0] == search_term)]
         if matches.empty:         # 如果没有找到匹配的行，进行模糊匹配
@@ -1512,7 +1510,7 @@ async def ffwsfcs(event: GroupMessage):
         a = check_admin(groupid, qq)
         if qq == master or a != False:
             msg = msg.replace('精确问 ', '')
-            msg = msg.split('答 ', 1)
+            msg = msg.split(' ', 1)
             question = msg[0]
             answer = msg[1]
             group_write(groupid, question, answer, '1')
@@ -1522,7 +1520,7 @@ async def ffwsfcs(event: GroupMessage):
         a = check_admin(groupid, qq)
         if qq == master or a != False:
             msg = msg.replace('模糊问 ', '')
-            msg = msg.split('答 ', 1)
+            msg = msg.split(' ', 1)
             question = msg[0]
             answer = msg[1]
             group_write(groupid, question, answer, '2')
