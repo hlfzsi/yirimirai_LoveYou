@@ -310,7 +310,7 @@ def pic_reply(qq, name, background_path, ico):
         bytes: 图片结果的base64编码
     """
     from PIL import Image
-    int_love, str_love = read_txt(qq)
+    int_love, str_love = get_both_love(qq)
 
     def sentence():
         ci = random.choice('abcdefghijkl')
@@ -1039,7 +1039,7 @@ def ws_load_love(qq):
     '''
     try:
         qq = str(qq)
-        int_love, str_love = read_txt_only(qq)
+        int_love, str_love = get_both_love_obly(qq)
         if int_love != None:
             return str(int_love)+'|||' + str_love
         else:
@@ -1048,7 +1048,7 @@ def ws_load_love(qq):
         return 'Fail'
 
 
-def change_txt(search_term: str, m: int) -> Tuple[str, int]:
+def get_global_reply(search_term: str, m: int) -> Tuple[str, int]:
     """检查词库获得回复
 
     Args:
@@ -1276,7 +1276,9 @@ def read_love_only(qq):
             return None
 
 
-def read_txt_only(qq):
+def get_both_love_obly(qq):
+    """与get_both_love函数的唯一区别在于这个函数是只读的,不会插入记录
+    """    
     # 初始化返回值
     love = read_love_only(qq)
     if love != None:
@@ -1300,8 +1302,8 @@ def read_txt_only(qq):
         return None, None
 
 
-def read_txt(qq: str) -> Tuple[int, str]:
-    """获得好感度
+def get_both_love(qq: str) -> Tuple[int, str]:
+    """获得好感度,如果qq不存在则插入记录
 
     Args:
         qq (str):用户qq号
@@ -1528,11 +1530,11 @@ async def bhrkhrt(event: GroupMessage):
     if message.startswith('/') or message.startswith('.') or message.startswith('*') or message.startswith('-') or message.startswith('查询 ') or message.startswith('模糊问 ') or message.startswith('精确问 ') or message.startswith('删除 '):
         return None
     qq = str(event.sender.id)
-    int_love, str_love = read_txt(qq)
+    int_love, str_love = get_both_love(qq)
     name = event.sender.get_name()
     message = message.replace(qq, '[qq]').replace(name, '[sender]').replace(str(
         int_love), '[intlove]').replace(str_love, '[love]').replace(bot_name, '[bot]').replace('\n', '\\n')
-    reply, love = change_txt(message, int_love)
+    reply, love = get_global_reply(message, int_love)
     try:
         if reply == None:
             raise Exception
@@ -1737,7 +1739,7 @@ async def ffwsfcs(event: GroupMessage):
 async def sadxchjw(event: GroupMessage):
     if str(event.message_chain) == '我的好感度' or str(event.message_chain) == '我的好感':
         qq = str(event.sender.id)
-        int_love, str_love = read_txt(qq)
+        int_love, str_love = get_both_love(qq)
         if str_love != '' or None:
             if lv_enable == 'False':
                 await bot.send(event, '你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
@@ -1802,7 +1804,7 @@ async def gegvsgverg(event: GroupMessage):
             msg = event.message_chain.as_mirai_code()
             msg = msg.replace('查询好感', '')
             qq = msg.replace('[mirai:at:', '').replace(']', '')
-        int_love, str_love = read_txt_only(qq)
+        int_love, str_love = get_both_love_obly(qq)
         if str_love != None:
             global search_love_reply
             reply = search_love_reply
@@ -1828,7 +1830,7 @@ async def jjjjjj(event: GroupMessage):
         if rate >= a:
             logger.debug('发送概率判断成功')
             qq = str(event.sender.id)
-            int_love, _ = read_txt(qq)
+            int_love, _ = get_both_love(qq)
             if int_love >= baseline:
                 logger.debug('baseline判断成功')
                 # 获取当前时间戳
@@ -1949,7 +1951,7 @@ async def dewcfvew(event: GroupMessage):
     if qq_list != None:
         for i in qq_list:
             a = str(i)
-            _, love = read_txt(i)
+            _, love = get_both_love(i)
             reply_b = reply_b+a+' : '+love+'\n'
         reply_b = replace_alias(reply_b)
         await bot.send(event, reply_b + '--------\n喵呜~~~')
@@ -1962,7 +1964,7 @@ async def dewcfvew(event: GroupMessage):
     if str(event.message_chain) == '本群好感排行':
         list = await bot.member_list(event.sender.group.id)
         ids = [member.id for member in list]
-        results = [(str(id), *read_txt(str(id)))
+        results = [(str(id), *get_both_love(str(id)))
                    for id in ids]  # 使用解包获取int_value和str_value
         sorted_results = sorted(
             results, key=lambda x: x[1], reverse=True)  # 按int_value降序排序
