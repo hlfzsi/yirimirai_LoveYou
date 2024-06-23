@@ -5,6 +5,7 @@ from PIL import ImageDraw, ImageFont
 from io import BytesIO
 from collections import defaultdict
 from datetime import datetime, timedelta
+import numpy as np
 import base64
 import jieba
 import sqlite3
@@ -80,7 +81,7 @@ logger.info('-by hlfzsi')
 time.sleep(1)
 logger.info('正在加载reply.csv')
 try:
-    df = pd.read_csv(csv_path, header=None,dtype=str)
+    df = pd.read_csv(csv_path, header=None, dtype=str, usecols=range(5),encoding='utf-8')
     df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
     logger.info('reply.csv已成功加载')
 except:
@@ -307,7 +308,7 @@ def pic_reply(qq, name, background_path, ico):
 
     Returns:
         bytes: 图片结果的base64编码
-    """    
+    """
     from PIL import Image
     int_love, str_love = read_txt(qq)
 
@@ -500,60 +501,75 @@ def check_admin(groupid, qq):
 def group_load(groupid):
     '''
     加载群聊词库
+
+    这一函数通常可以被 global groups_df | groups_df[groupid] = df 完全取代
+
+    请避免使用本函数,因为它的性能不如替代方案
+
+    如果你需要加载所有词库,请使用read_csv_files_to_global_dict函数
     '''
     # 构造文件路径
     file_path = os.path.join('./data/group', f"{groupid}.csv")
 
     # 如果文件存在，读取CSV到DataFrame
     if os.path.exists(file_path):
-        df = pd.read_csv(file_path,dtype=str)
+        df = pd.read_csv(file_path, dtype=str, usecols=range(6),encoding='utf-8')
         # 将DataFrame添加到全局字典中，以groupid为键
+        global groups_df
         groups_df[groupid] = df
 
-def group_write(groupid:str, question:str, answer:str, type:str):
+
+def group_write(groupid: str, question: str, answer: str, type: str):
     '''
     groupid:群号
     question:触发词
     answer:回复
-    tpye:类型.1为精准匹配,2为模糊匹配
+    type:类型.1为精准匹配,2为模糊匹配
     '''
     # 构造文件路径
+
     base_path = './data/group'
     file_path = os.path.join(base_path, f"{groupid}.csv")
 
     # 如果文件不存在，创建一个空的DataFrame
     if not os.path.exists(file_path):
-        df = pd.DataFrame(columns=['Question', 'Answer', 'Love', 'Range'])
+        df = pd.DataFrame(
+            columns=['Question', 'Answer', 'Love', 'Range', 'Type', 'Status'])
     else:
+        global groups_df
         # 如果文件存在，读取它
-        df = pd.read_csv(file_path)
-
-    # 将新的数据添加到DataFrame中
-    new_row = pd.DataFrame([[question, answer, '', '', type]], columns=[
-                           'Question', 'Answer', 'Love', 'Range', 'Type'])
+        df = groups_df[groupid]
+        
+    # 将新的数据添加到DataFrame中  
+    new_row = pd.DataFrame([[question, answer,'','',type,'']],columns=['Question', 'Answer', 'Love', 'Range', 'Type', 'Status'])
     df = pd.concat([df, new_row], ignore_index=True)
 
     # 将DataFrame写入CSV文件
-    df.to_csv(file_path, index=False)
-    group_load(groupid)
+    df.to_csv(file_path, index=False,encoding='utf-8')
+    groups_df[groupid] = df
+    # group_load(groupid)
+
     logger.debug('写入成功')
 
 
 def group_del(groupid, question):
     # 构造文件路径
     file_path = os.path.join('./data/group', f"{groupid}.csv")
+    global groups_df
 
-    # 如果文件存在，读取它
-    if os.path.exists(file_path):
-        df = pd.read_csv(file_path)
+    if groupid in groups_df:
+        df = groups_df[groupid]
 
-        # 找到与question完全匹配的行并删除它们
-        mask = df['Question'] != question
-        df = df[mask]
+        # 找到与question完全匹配且Status不为locked的行，并删除它们
+        mask = (df['Question'] == question) & (df['Status'] != 'locked')
+        df = df[~mask]  # 使用~来取反mask，选择不满足条件的行
 
         # 将修改后的DataFrame写回CSV文件
         df.to_csv(file_path, index=False)
-        group_load(groupid)
+
+        # group_load(groupid)
+        groups_df[groupid] = df
+
         logger.debug('删除成功')
     else:
         logger.warning(f"{file_path}不存在")
@@ -1032,7 +1048,7 @@ def ws_load_love(qq):
         return 'Fail'
 
 
-def change_txt(search_term:str, m:int)->Tuple[str,int]:
+def change_txt(search_term: str, m: int) -> Tuple[str, int]:
     """检查词库获得回复
 
     Args:
@@ -1040,23 +1056,31 @@ def change_txt(search_term:str, m:int)->Tuple[str,int]:
         m (int): 用户的数值好感度
     Returns:
         Tuple[str,int]: 回复,好感变化值
-    """    
+    """
     # 筛选匹配第一列的行
     matches = df[(df.iloc[:, 4] == '1') & (df.iloc[:, 0] == search_term)]
     if matches.empty:         # 如果没有找到匹配的行，进行模糊匹配
-        matches = df[(df.iloc[:, 4] == '2') & (
-            df.iloc[:, 0].str.contains(search_term, case=False, na=False))]
+        if len(search_term) <= 90:
+            # 使用列表推导式来检查search_term是否包含第一列中的任何字符串
+            condition = [str(x) in search_term for x in df.iloc[:, 0]]
+            condition = pd.Series(condition, index=df.index)
+            matches = df[(df.iloc[:, 4] == '2') &
+                         condition]
+
+        else:
+            return None, None
+   # 模糊匹配无法高效率实现，因此在全局词库中考虑抛弃该功能
 
     # 过滤掉第四列(c, d)范围不包含m的行，并处理空值
-    def is_m_in_range(row):
-        cd_str = str(row.iloc[3])
-        if cd_str.strip() == "nan":  # 如果为空值或空字符串，则认为m符合范围
-            return True
-        try:
-            c, d = map(int, cd_str.strip('()').split(','))
-            return c <= m <= d  # 检查 m 是否在 (c, d) 范围内
-        except ValueError:  # 如果无法转换为整数
-            return False
+        def is_m_in_range(row):
+            cd_str = str(row.iloc[3])
+            if cd_str.strip() == "nan" or cd_str.strip() == "":  # 如果为空值或空字符串，则认为m符合范围
+                return True
+            try:
+                c, d = map(int, cd_str.strip('()').split(','))
+                return c <= m <= d  # 检查 m 是否在 (c, d) 范围内
+            except ValueError:  # 如果无法转换为整数
+                return True
 
     # 第四列是字符串形式的范围，如"(1, 5)"
     # 或者第四列可能包含空值或无法转换为整数的字符串
@@ -1097,26 +1121,34 @@ def groups_reply(groupid, search_term, m):
 
     Returns:
         Tuple[str,int]: 回复,好感变化值
-    """ 
+    """
+    global groups_df
     if groupid in groups_df:
         df = groups_df[groupid]
-        df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
+        # df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
         # 筛选匹配第一列的行
         matches = df[(df.iloc[:, 4] == '1') & (df.iloc[:, 0] == search_term)]
         if matches.empty:         # 如果没有找到匹配的行，进行模糊匹配
-            matches = df[(df.iloc[:, 4] == '2') & (
-                df.iloc[:, 0].str.contains(search_term, case=False, na=False))]
+            if len(search_term) <= 90:
+                # 使用列表推导式来检查search_term是否包含第一列中的任何字符串
+                condition = [str(x) in search_term for x in df['Question']]
+                condition = pd.Series(condition, index=df.index)
+                matches = df[(df['Type'] == '2') &
+                             condition]
+
+            else:
+                return None, 0
 
         # 过滤掉第四列(c, d)范围不包含m的行，并处理空值
         def is_m_in_range(row):
             cd_str = str(row.iloc[3])
-            if cd_str.strip() == "nan":  # 如果为空值或空字符串，则认为m符合范围
+            if cd_str.strip() == "nan" or cd_str.strip() == "":  # 如果为空值或空字符串，则认为m符合范围
                 return True
             try:
                 c, d = map(int, cd_str.strip('()').split(','))
                 return c <= m <= d  # 检查 m 是否在 (c, d) 范围内
             except ValueError:  # 如果无法转换为整数
-                return False
+                return True
 
         # 假设 matches 是一个pandas DataFrame，且第四列是字符串形式的范围，如"(1, 5)"
         # 或者第四列可能包含空值或无法转换为整数的字符串
@@ -1268,7 +1300,7 @@ def read_txt_only(qq):
         return None, None
 
 
-def read_txt(qq:str)->Tuple[int,str]:
+def read_txt(qq: str) -> Tuple[int, str]:
     """获得好感度
 
     Args:
@@ -1307,7 +1339,8 @@ def read_csv_files_to_global_dict(directory='./data/group'):
             # 构造文件路径
             file_path = os.path.join(directory, filename)
             # 读取CSV文件到DataFrame
-            df = pd.read_csv(file_path,dtype={'Type': str})
+            df = pd.read_csv(file_path, dtype=str, usecols=range(6),encoding='utf-8')
+            df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
             # 将DataFrame添加到全局字典中，以groupid为键
             groups_df[groupid] = df
 
@@ -1363,6 +1396,122 @@ def get_low_ten_qqs():
     return top_ten_qqs
 
 
+def find_row(groupid: str, question: str) -> list:
+    # 从字典中获取DataFrame
+    if groupid in groups_df:
+        df = groups_df[groupid]
+        # 使用列名Question来找到所有匹配的行
+        matches = df[df['Question'] == question]
+        # 如果找到了匹配的行，返回行号和Answer列的字符串列表
+        if not matches.empty:
+            # 使用matches.index来获取原始行号，并与Answer值一起构造列表
+            logger.debug(f'完成在{groupid}的查找')
+            return [f"{idx} : {matches.loc[idx, 'Answer']}" for idx in matches.index]
+        else:
+            logger.debug(f'完成在{groupid}的查找,但为空')
+            return []  # 如果没有找到匹配的行，返回一个空列表
+    else:
+        logger.warning(f'{groupid}不在词库中')
+        return ['当前词库不存在']
+
+
+def del_row(groupid: str, row_indices: list):
+    global groups_df
+    if groupid in groups_df:
+        # 构造文件路径
+        base_path = './data/group'
+        file_path = os.path.join(base_path, f"{groupid}.csv")
+
+        df = groups_df[groupid]
+
+        status_column = df['Status']
+
+        # 过滤出row_indices中对应的且不是'locked'的行索引
+        rows_to_update = [
+            idx for idx in row_indices if idx in df.index and not status_column.iloc[idx] == 'locked']
+
+        # 设置这些行为NaN
+        df.loc[rows_to_update] = np.nan
+
+        # 删除所有列都为NaN的行
+        df.dropna(how='all', inplace=True)
+
+        # 将修改后的DataFrame保存回文件
+        df.to_csv(file_path, index=False)
+
+        # 重新加载DataFrame到groups_df字典
+        # group_load(groupid)
+        groups_df[groupid] = df
+
+        logger.debug(f'完成在{groupid}的行删除')
+        return len(rows_to_update), len(row_indices) - len(rows_to_update)
+    else:
+        logger.warning(f'{groupid}不在词库中')
+        return 0, 0
+
+
+def lock_row(groupid: str, rows: list[str], type: int) -> None:
+    # 从字典中获取DataFrame
+    global groups_df
+    if groupid in groups_df:
+        df = groups_df[groupid]
+
+       # 遍历字符串列表并尝试锁定相应的行
+        for row_str in rows:
+
+            # 尝试将字符串转换为整数
+            row_int = int(row_str)
+            # 检查行号是否有效
+            if 0 <= row_int < len(df):
+                # 锁定指定行的第六列（使用iloc和整数索引）
+                if type == 0:
+                    df.iloc[row_int, 5] = 'locked'
+                elif type == 1:
+                    df.iloc[row_int, 5] = 'unlocked'
+            else:
+                raise Exception
+        # 构造文件路径
+        base_path = './data/group'
+        file_path = os.path.join(base_path, f"{groupid}.csv")
+
+        # 将修改后的DataFrame保存回文件
+        df.to_csv(file_path, index=False)
+
+        # 重新加载DataFrame到groups_df字典
+        # group_load(groupid)
+        groups_df[groupid] = df
+        logger.debug(f'完成在{groupid}的锁定修改')
+
+    else:
+        logger.warning(f'{groupid}不在词库中')
+        raise Exception
+
+
+def load_info(groupid: str, row: int) -> list:
+    """获得指定行的详细信息
+
+    Args:
+        groupid (str): 群号
+        row (int): 行数
+
+    Returns:
+        list|None: 正常情况下返回按列排序的list
+    """
+    global groups_df
+    if groupid in groups_df:
+        df = groups_df[groupid]
+        if 0 <= row < len(df):  # 确保行号在DataFrame的行数范围内
+            # 读取指定行的所有列内容
+            row_data = df.iloc[row].fillna('None').tolist()    # 使用iloc通过整数位置索引
+            logger.debug(f'完成在{groupid}的行查找')
+            return row_data
+        else:
+            return None
+    else:
+        logger.warning(f'{groupid}不在词库中')
+        return None
+
+
 if __name__ == '__main__':
     bot = Mirai(
         qq=bot_qq,  # 改成你的机器人的 QQ 号
@@ -1376,6 +1525,8 @@ inc = InterruptControl(bot)
 @bot.on(GroupMessage)
 async def bhrkhrt(event: GroupMessage):
     message = str(event.message_chain)
+    if message.startswith('/') or message.startswith('.') or message.startswith('*') or message.startswith('-') or message.startswith('查询 ') or message.startswith('模糊问 ') or message.startswith('精确问 ') or message.startswith('删除 '):
+        return None
     qq = str(event.sender.id)
     int_love, str_love = read_txt(qq)
     name = event.sender.get_name()
@@ -1386,6 +1537,7 @@ async def bhrkhrt(event: GroupMessage):
         if reply == None:
             raise Exception
         reply = str(reply)
+
         if reply.startswith('RL'):  # RL快速方法
             reply = reply.replace('RL', '')
             reply, love = RL_support(reply)
@@ -1394,9 +1546,9 @@ async def bhrkhrt(event: GroupMessage):
             love = int(love)
         except:
             love = int(0)
+
         if '[cut]' in reply:
             reply_list = reply.split('[cut]')
-            print(reply_list)
             for i in reply_list:
                 i = i.replace('[qq]', qq).replace('[sender]', name).replace('[intlove]', str(int_love)).replace(
                     '[love]', str_love).replace('[bot]', bot_name).replace('[vary]', str(love)).replace('\\n', '\n')
@@ -1408,6 +1560,7 @@ async def bhrkhrt(event: GroupMessage):
                 else:
                     await bot.send(event, i)
                 time.sleep(1)
+
         elif reply != 'None' and reply != None:
             reply = reply.replace('[qq]', qq).replace('[sender]', name).replace('[intlove]', str(int_love)).replace(
                 '[love]', str_love).replace('[bot]', bot_name).replace('[vary]', str(love)).replace('\\n', '\n')
@@ -1417,6 +1570,7 @@ async def bhrkhrt(event: GroupMessage):
                 await bot.send(event, [reply, Image(path='.\data\pic\\'+pic)])
             else:
                 await bot.send(event, reply)
+
         if love == 0:
             love = random.randint(Ca, Cb)
     except:
@@ -1438,9 +1592,9 @@ async def bhrkhrt(event: GroupMessage):
                 love = int(love)
             except:
                 love = int(0)
+
             if '[cut]' in reply:
                 reply_list = reply.split('[cut]')
-                print(reply_list)
                 for i in reply_list:
                     i = i.replace('[qq]', qq).replace('[sender]', name).replace('[intlove]', str(int_love)).replace(
                         '[love]', str_love).replace('[bot]', bot_name).replace('[vary]', str(love)).replace('\\n', '\n')
@@ -1452,6 +1606,7 @@ async def bhrkhrt(event: GroupMessage):
                     else:
                         await bot.send(event, i)
                 time.sleep(1)
+
             elif reply != 'None' and reply != None:
                 reply = reply.replace('[qq]', qq).replace('[sender]', name).replace('[intlove]', str(int_love)).replace(
                     '[love]', str_love).replace('[bot]', bot_name).replace('[vary]', str(love)).replace('\\n', '\n')
@@ -1474,6 +1629,7 @@ async def ffwsfcs(event: GroupMessage):
     msg = str(event.message_chain)
     groupid = str(event.sender.group.id)
     qq = str(event.sender.id)
+    a = check_admin(groupid, qq)
     if msg.startswith('/set senior '):
         if qq == master:
             msg = msg.replace('/set senior ', '')
@@ -1481,14 +1637,12 @@ async def ffwsfcs(event: GroupMessage):
             await bot.send(event, '成功设置高管喵~')
             logger.debug('设置'+msg+'为'+groupid+'高管')
     elif msg.startswith('/set admin '):
-        a = check_admin(groupid, qq)
         if qq == master or a == 'high':
             msg = msg.replace('/set admin ', '')
             write_admin(groupid, 'common', msg)
             await bot.send(event, '成功设置管理喵~')
             logger.debug('设置'+msg+'为'+groupid+'管理')
     elif msg.startswith('/del admin '):
-        a = check_admin(groupid, qq)
         if qq == master or a == 'high':
             msg = msg.replace('/del admin ', '')
             del_admin(groupid, msg)
@@ -1501,13 +1655,11 @@ async def ffwsfcs(event: GroupMessage):
             await bot.send(event, '成功取消高管喵~')
             logger.debug('取消'+msg+'为'+groupid+'高管')
     elif msg.startswith('删除 '):
-        a = check_admin(groupid, qq)
         if qq == master or a != False:
             question = msg.replace('删除 ', '')
             group_del(groupid, question)
             await bot.send(event, '成功删除回复喵~')
     elif msg.startswith('精确问 '):
-        a = check_admin(groupid, qq)
         if qq == master or a != False:
             msg = msg.replace('精确问 ', '')
             msg = msg.split(' ', 1)
@@ -1516,8 +1668,7 @@ async def ffwsfcs(event: GroupMessage):
             group_write(groupid, question, answer, '1')
             await bot.send(event, '成功设置回复喵~')
             logger.debug('写入新回复')
-    elif msg.startswith('精确问 '):
-        a = check_admin(groupid, qq)
+    elif msg.startswith('模糊问 '):
         if qq == master or a != False:
             msg = msg.replace('模糊问 ', '')
             msg = msg.split(' ', 1)
@@ -1526,6 +1677,60 @@ async def ffwsfcs(event: GroupMessage):
             group_write(groupid, question, answer, '2')
             await bot.send(event, '成功设置回复喵~')
             logger.debug('写入新回复')
+    elif msg.startswith('查询 '):
+        if qq == master or a != False:
+            msg = msg.replace('查询 ', '')
+            answers = find_row(groupid, msg)
+            global reply_answer
+            reply_answer = '查询到'+msg+'有以下回复喵:\n'
+            for answer in answers:
+                reply_answer = reply_answer+answer+'\n'
+            await bot.send(event, reply_answer+'请使用/dr指令删除指定行喵~')
+            del reply_answer
+    elif msg.startswith('/dr '):
+        if qq == master or a != False:
+            msg = msg.replace('/dr ', '')
+            msg = msg.split(' ')
+            try:
+                msg = [int(s) for s in msg]
+                success, fail = del_row(groupid, msg)
+                if success == 0 and fail == 0:
+                    raise Exception
+                msg = '成功删除'+str(success)+'行，删除失败(由于锁定)'+str(fail)+'行喵~'
+                await bot.send(event, msg)
+            except:
+                await bot.send(event, '删除指定行失败喵~')
+    elif msg.startswith('/lock '):
+        if qq == master or a == 'high':
+            msg = msg.replace('/lock ', '')
+            msg = msg.split(' ')
+            try:
+                lock_row(groupid, msg, 0)
+                await bot.send(event, '锁定成功喵~')
+            except:
+                await bot.send(event, '输入不合法喵~行号可通过 查询 指令获取喵~')
+    elif msg.startswith('/unlock '):
+        if qq == master or a == 'high':
+            msg = msg.replace('/unlock ', '')
+            msg = msg.split(' ')
+            try:
+                lock_row(groupid, msg, 1)
+                await bot.send(event, '解锁成功喵~')
+            except:
+                await bot.send(event, '输入不合法喵~行号可通过 查询 指令获取喵~')
+    elif msg.startswith('/info '):
+        if qq == master or a != False:
+            msg = msg.replace('/info ', '')
+            try:
+                msg = int(msg)
+                data = load_info(groupid, msg)
+                if data == None:
+                    raise Exception
+                else:
+                    reply = f"触发词: {data[0]}\n回复: {data[1]}\n好感增减范围: {data[2]}\n好感触发: {data[3]}\n类型: {data[4]}(1=精确,2=模糊)\n状态: {data[5]}"
+                await bot.send(event, reply)
+            except:
+                await bot.send(event, '输入不合法喵~行号可通过 查询 指令获取喵~')
 
 
 @bot.on(GroupMessage)
@@ -1623,7 +1828,7 @@ async def jjjjjj(event: GroupMessage):
         if rate >= a:
             logger.debug('发送概率判断成功')
             qq = str(event.sender.id)
-            int_love, str_love = read_txt(qq)
+            int_love, _ = read_txt(qq)
             if int_love >= baseline:
                 logger.debug('baseline判断成功')
                 # 获取当前时间戳
@@ -1840,7 +2045,7 @@ async def picqq(event: GroupMessage):
 
 @bot.on(GroupMessage)
 async def fegsg(event: GroupMessage):
-    def del_face(text:str)->str:
+    def del_face(text: str) -> str:
         result = re.sub(face_del, '', text)
         return result
     message = str(event.message_chain)
@@ -1862,12 +2067,12 @@ async def fegsg(event: GroupMessage):
                 if reply != None:
                     reply = str(reply)
                     reply = reply.replace('菲菲', bot_name)
-                    reply=del_face(reply)
+                    reply = del_face(reply)
                     await bot.send(event, reply, True)
             else:
                 logger.debug('重复消息')
     m = random.random()
-    if m <= 0.06 and botreact == 'True' and message != '':
+    if m <= 0.006 and botreact == 'True' and message != '':
         reply = await qingyunke(message)
         s = SnowNLP(message)
         key = s.keywords(1)
@@ -1888,8 +2093,8 @@ async def fegsg(event: GroupMessage):
         if reply != None:
             reply = str(reply)
             reply = reply.replace('菲菲', bot_name)
-            reply=del_face(reply)
-            await bot.send(event, [At(int(qq)), reply])
+            reply = del_face(reply)
+            await bot.send(event, [At(int(qq)), ' '+reply])
 
     # if ws=='Ture':
     # 函数注册表
