@@ -81,7 +81,8 @@ logger.info('-by hlfzsi')
 time.sleep(1)
 logger.info('正在加载reply.csv')
 try:
-    df = pd.read_csv(csv_path, header=None, dtype=str, usecols=range(5),encoding='utf-8')
+    df = pd.read_csv(csv_path, header=None, dtype=str,
+                     usecols=range(5), encoding='utf-8')
     df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
     logger.info('reply.csv已成功加载')
 except:
@@ -158,13 +159,13 @@ def loadconfig():
     react = config.get('others', '@_react')
     ws_port = config.getint('others', 'ws_port')
     logger.info('config.ini第一部分已成功加载')
-    a = int(a)
-    b = int(b)
     return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port
 
 
 bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port = loadconfig()
 # logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
+df.iloc[:, 2] = df.iloc[:, 2].fillna(f'({Ca},{Cb})')
+del Ca, Cb
 
 
 def get_range(value):
@@ -513,7 +514,8 @@ def group_load(groupid):
 
     # 如果文件存在，读取CSV到DataFrame
     if os.path.exists(file_path):
-        df = pd.read_csv(file_path, dtype=str, usecols=range(6),encoding='utf-8')
+        df = pd.read_csv(file_path, dtype=str,
+                         usecols=range(6), encoding='utf-8')
         # 将DataFrame添加到全局字典中，以groupid为键
         global groups_df
         groups_df[groupid] = df
@@ -539,13 +541,14 @@ def group_write(groupid: str, question: str, answer: str, type: str):
         global groups_df
         # 如果文件存在，读取它
         df = groups_df[groupid]
-        
-    # 将新的数据添加到DataFrame中  
-    new_row = pd.DataFrame([[question, answer,'','',type,'']],columns=['Question', 'Answer', 'Love', 'Range', 'Type', 'Status'])
+
+    # 将新的数据添加到DataFrame中
+    new_row = pd.DataFrame([[question, answer, '', '', type, '']], columns=[
+                           'Question', 'Answer', 'Love', 'Range', 'Type', 'Status'])
     df = pd.concat([df, new_row], ignore_index=True)
 
     # 将DataFrame写入CSV文件
-    df.to_csv(file_path, index=False,encoding='utf-8')
+    df.to_csv(file_path, index=False, encoding='utf-8')
     groups_df[groupid] = df
     # group_load(groupid)
 
@@ -999,7 +1002,13 @@ def check_pic_code(code_to_check, filename='./data/pic_code.txt'):
     return False
 
 
-def update_txt(qq, love):
+def updata_love(qq: str, love: int):
+    """更新用户好感
+
+    Args:
+        qq (str)
+        love (int): 好感变化量
+    """
     # 连接到SQLite数据库
     with sqlite3.connect(db_path) as conn:
         # 创建一个游标对象
@@ -1027,7 +1036,7 @@ def ws_change_love(qq, love):
     try:
         qq = str(qq)
         love = int(love)
-        update_txt(qq, love)
+        updata_love(qq, love)
         return 'DONE'
     except:
         return 'Fail'
@@ -1072,15 +1081,15 @@ def get_global_reply(search_term: str, m: int) -> Tuple[str, int]:
    # 模糊匹配无法高效率实现，因此在全局词库中考虑抛弃该功能
 
     # 过滤掉第四列(c, d)范围不包含m的行，并处理空值
-        def is_m_in_range(row):
-            cd_str = str(row.iloc[3])
-            if cd_str.strip() == "nan" or cd_str.strip() == "":  # 如果为空值或空字符串，则认为m符合范围
-                return True
-            try:
-                c, d = map(int, cd_str.strip('()').split(','))
-                return c <= m <= d  # 检查 m 是否在 (c, d) 范围内
-            except ValueError:  # 如果无法转换为整数
-                return True
+    def is_m_in_range(row):
+        cd_str = str(row.iloc[3])
+        if cd_str.strip() == "nan" or cd_str.strip() == "":  # 如果为空值或空字符串，则认为m符合范围
+            return True
+        try:
+            c, d = map(int, cd_str.strip('()').split(','))
+            return c <= m <= d  # 检查 m 是否在 (c, d) 范围内
+        except ValueError:  # 如果无法转换为整数
+            return True
 
     # 第四列是字符串形式的范围，如"(1, 5)"
     # 或者第四列可能包含空值或无法转换为整数的字符串
@@ -1278,7 +1287,7 @@ def read_love_only(qq):
 
 def get_both_love_obly(qq):
     """与get_both_love函数的唯一区别在于这个函数是只读的,不会插入记录
-    """    
+    """
     # 初始化返回值
     love = read_love_only(qq)
     if love != None:
@@ -1341,7 +1350,8 @@ def read_csv_files_to_global_dict(directory='./data/group'):
             # 构造文件路径
             file_path = os.path.join(directory, filename)
             # 读取CSV文件到DataFrame
-            df = pd.read_csv(file_path, dtype=str, usecols=range(6),encoding='utf-8')
+            df = pd.read_csv(file_path, dtype=str,
+                             usecols=range(6), encoding='utf-8')
             df.iloc[:, 4] = df.iloc[:, 4].fillna('1')
             # 将DataFrame添加到全局字典中，以groupid为键
             groups_df[groupid] = df
@@ -1544,6 +1554,23 @@ async def bhrkhrt(event: GroupMessage):
             reply = reply.replace('RL', '')
             reply, love = RL_support(reply)
             logger.debug('RL '+reply)
+
+        if '[pos]' in reply:
+            s = snownlp.SnowNLP(message)
+            sentiment_score = s.sentiments
+            if sentiment_score <= 0.75:
+                logger.debug('拒绝发送')
+                return None
+            else:
+                reply = reply.replace('[pos]', '')
+        if '[nag]' in reply:
+            s = snownlp.SnowNLP(message)
+            sentiment_score = s.sentiments
+            if sentiment_score >= 0.25:
+                logger.debug('拒绝发送')
+                return None
+            else:
+                reply = reply.replace('[nag]', '')
         try:
             love = int(love)
         except:
@@ -1563,7 +1590,7 @@ async def bhrkhrt(event: GroupMessage):
                     await bot.send(event, i)
                 time.sleep(1)
 
-        elif reply != 'None' and reply != None:
+        else:
             reply = reply.replace('[qq]', qq).replace('[sender]', name).replace('[intlove]', str(int_love)).replace(
                 '[love]', str_love).replace('[bot]', bot_name).replace('[vary]', str(love)).replace('\\n', '\n')
             reply = replace_alias(reply)
@@ -1572,13 +1599,14 @@ async def bhrkhrt(event: GroupMessage):
                 await bot.send(event, [reply, Image(path='.\data\pic\\'+pic)])
             else:
                 await bot.send(event, reply)
-
-        if love == 0:
-            love = random.randint(Ca, Cb)
+            if love != 0 and love != None:
+                updata_love(qq, love)
+                logger.debug('已更新用户好感')
+            return None
     except:
         pass
 
-    if reply == None or reply == "None":  # 群聊词库支持
+    if reply == None:  # 群聊词库支持
         groupid = str(event.sender.group.id)
         reply, love = groups_reply(groupid, message, int_love)
         try:
@@ -1590,6 +1618,23 @@ async def bhrkhrt(event: GroupMessage):
                 reply, love = RL_support(reply)
                 love = 0
                 logger.debug('RL '+reply)
+
+            if '[pos]' in reply:
+                s = snownlp.SnowNLP(message)
+                sentiment_score = s.sentiments
+                if sentiment_score <= 0.7:
+                    logger.debug('拒绝发送')
+                    return None
+                else:
+                    reply = reply.replace('[pos]', '')
+            if '[nag]' in reply:
+                s = snownlp.SnowNLP(message)
+                sentiment_score = s.sentiments
+                if sentiment_score >= 0.3:
+                    logger.debug('拒绝发送')
+                    return None
+                else:
+                    reply = reply.replace('[nag]', '')
             try:
                 love = int(love)
             except:
@@ -1618,12 +1663,12 @@ async def bhrkhrt(event: GroupMessage):
                     await bot.send(event, [reply, Image(path='.\data\pic\group\\'+pic)])
                 else:
                     await bot.send(event, reply)
+                if love != 0 and love != None:
+                    updata_love(qq, love)
+                    logger.debug('已更新用户好感')
+                return None
         except:
             pass
-
-    if love != 0 and love != None:
-        update_txt(qq, love)
-        logger.debug('已更新用户好感')
 
 
 @bot.on(GroupMessage)
@@ -1955,6 +2000,7 @@ async def dewcfvew(event: GroupMessage):
             reply_b = reply_b+a+' : '+love+'\n'
         reply_b = replace_alias(reply_b)
         await bot.send(event, reply_b + '--------\n喵呜~~~')
+    del reply_b
 
 
 @bot.on(GroupMessage)
@@ -1976,6 +2022,7 @@ async def dewcfvew(event: GroupMessage):
             reply_a = reply_a+a+'\n'
         reply_a = replace_alias(reply_a)
         await bot.send(event, reply_a + '--------\n喵呜~~~')
+        del reply_a
 
 
 @bot.on(GroupMessage)
@@ -2053,7 +2100,9 @@ async def fegsg(event: GroupMessage):
     message = str(event.message_chain)
     message = message.replace('[图片]', '').replace(bot_name, '菲菲')
     reply = None
+    isSend = False
     if bot_name in message or At(bot.qq) in event.message_chain:
+        isSend = True
         if message != '':
             if At(bot.qq) in event.message_chain and botreact == 'True':
                 reply = await qingyunke(message)
@@ -2064,7 +2113,7 @@ async def fegsg(event: GroupMessage):
                 love = love_score(message)
                 logger.debug('情感运算')
                 if love != 0:
-                    update_txt(qq, love)
+                    updata_love(qq, love)
                     logger.debug(qq+'情感运算'+str(love))
                 if reply != None:
                     reply = str(reply)
@@ -2074,7 +2123,7 @@ async def fegsg(event: GroupMessage):
             else:
                 logger.debug('重复消息')
     m = random.random()
-    if m <= 0.006 and botreact == 'True' and message != '':
+    if m <= 0.006 and botreact == 'True' and message != '' and isSend == False:
         reply = await qingyunke(message)
         s = SnowNLP(message)
         key = s.keywords(1)
@@ -2090,7 +2139,7 @@ async def fegsg(event: GroupMessage):
         reply = reply+extra
         logger.debug('情感运算')
         if love != 0:
-            update_txt(qq, love)
+            updata_love(qq, love)
             logger.debug(qq+'情感运算'+str(love))
         if reply != None:
             reply = str(reply)
@@ -2098,8 +2147,7 @@ async def fegsg(event: GroupMessage):
             reply = del_face(reply)
             await bot.send(event, [At(int(qq)), ' '+reply])
 
-    # if ws=='Ture':
-    # 函数注册表
+# 函数注册表
 function_registry = {
     "get_love": ws_load_love,  # 需要qq
     "change_love": ws_change_love  # 需要qq和love
@@ -2156,8 +2204,9 @@ def real_start_server():
 
 
 ws_thread = threading.Thread(target=real_start_server)
-ws_thread.start()
-
+if ws == "True":
+    ws_thread.start()
+del ws
 retry = False
 try:
     logger.info('Ciallo～(∠・ω< )⌒★')
