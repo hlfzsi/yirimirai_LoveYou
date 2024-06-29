@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import base64
 import jieba
+import glob
 import sqlite3
 import snownlp
 from snownlp import SnowNLP
@@ -555,26 +556,38 @@ def group_write(groupid: str, question: str, answer: str, type: str):
     logger.debug('写入成功')
 
 
-def group_del(groupid, question):
-    # 构造文件路径
-    file_path = os.path.join('./data/group', f"{groupid}.csv")
-    global groups_df
-
-    if groupid in groups_df:
-        df = groups_df[groupid]
-
-        # 找到与question完全匹配且Status不为locked的行，并删除它们
-        mask = (df['Question'] == question) & (df['Status'] != 'locked')
-        df = df[~mask]  # 使用~来取反mask，选择不满足条件的行
-
-        # 将修改后的DataFrame写回CSV文件
-        df.to_csv(file_path, index=False)
-
-        # group_load(groupid)
-        groups_df[groupid] = df
-
-        logger.debug('删除成功')
-    else:
+def group_del(groupid, question):  
+    # 构造文件路径  
+    file_path = os.path.join('./data/group', f"{groupid}.csv")  
+    global groups_df  
+  
+    if groupid in groups_df:  
+        df = groups_df[groupid]  
+  
+        # 找到与question完全匹配且Status不为locked的行  
+        mask = (df['Question'] == question) & (df['Status'] != 'locked')  
+        rows_to_delete = df[mask].index.tolist()  
+  
+        # 从后向前删除行，避免索引变化影响迭代  
+        for index in sorted(rows_to_delete, reverse=True):  
+            row = df.iloc[index]  
+            if '[pic=' in row['Answer']:  
+                _, path = pic_support(row['Answer'])  
+                try:  
+                    os.remove(f'./data/pic/group/{groupid}/{path}')  
+                except FileNotFoundError:  
+                    logger.warning(f"文件 {path} 未找到，无法删除。")  
+            # 删除DataFrame中的行  
+            df.drop(index, inplace=True)  
+  
+        # 将修改后的DataFrame写回CSV文件  
+        df.to_csv(file_path, index=False)  
+  
+        # 更新全局变量  
+        groups_df[groupid] = df  
+  
+        logger.debug('删除成功')  
+    else:  
         logger.warning(f"{file_path}不存在")
 
 
@@ -805,8 +818,9 @@ def RL_support(s: str) -> Tuple[str, int]:
 
 
 def pic_support(text: str) -> Tuple[str, str]:
-    # 正则表达式匹配 [pic=任意图片名.(png|jpg)]
-    pattern = r'\[pic=(.*?\.(png|jpg))\]'
+    '''返回图片名称'''
+    # 正则表达式匹配 [pic=任意图片名.(png|jpg|jpeg)]
+    pattern = r'\[pic=(.*?\.(png|jpg|jpeg))\]'
 
     # 查找所有匹配项
     matches = re.findall(pattern, text)
@@ -1193,6 +1207,15 @@ def groups_reply(groupid, search_term, m):
 qq_dict = {}
 
 
+def generate_random_string(length=16):
+    """  
+    生成指定长度的包含大小写字母和数字的随机字符串  
+    """
+    characters = string.ascii_letters + string.digits
+    random_string = ''.join(random.choices(characters, k=length))
+    return random_string
+
+
 def read_qq_txt_to_dict(file_path='./data/qq.txt'):
     # 创建一个空字典来存储键值对
     global qq_dict
@@ -1360,6 +1383,14 @@ def read_csv_files_to_global_dict(directory='./data/group'):
 read_csv_files_to_global_dict()
 
 
+def check_group_folder(groupid: str) -> str:
+    '''返回文件夹路径'''
+    folder_path = os.path.join('.\data\pic\group', groupid)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    return f'{folder_path}\\'
+
+
 def GlobalCompare():
     try:
         # 连接到SQLite数据库
@@ -1437,10 +1468,21 @@ def del_row(groupid: str, row_indices: list):
         df = groups_df[groupid]
 
         status_column = df['Status']
+        column_with_images = df['Answer']
 
         # 过滤出row_indices中对应的且不是'locked'的行索引
         rows_to_update = [
             idx for idx in row_indices if idx in df.index and not status_column.iloc[idx] == 'locked']
+
+        for idx in rows_to_update:
+            if idx in df.index:
+                status = status_column.iloc[idx]
+                if not status == 'locked':
+                    # 检查图片链接列是否包含'[pic='
+                    if '[pic=' in str(column_with_images.iloc[idx]):
+                        _, path = pic_support(
+                            str(column_with_images.iloc[idx]))
+                        os.remove(f'./data/pic/group/{groupid}/{path}')
 
         # 设置这些行为NaN
         df.loc[rows_to_update] = np.nan
@@ -1540,6 +1582,8 @@ async def bhrkhrt(event: GroupMessage):
     if message.startswith('/') or message.startswith('.') or message.startswith('*') or message.startswith('-') or message.startswith('查询 ') or message.startswith('模糊问 ') or message.startswith('精确问 ') or message.startswith('删除 '):
         return None
     qq = str(event.sender.id)
+    if qq == bot_qq:
+        return None
     int_love, str_love = get_both_love(qq)
     name = event.sender.get_name()
     message = message.replace(qq, '[qq]').replace(name, '[sender]').replace(str(
@@ -1649,7 +1693,7 @@ async def bhrkhrt(event: GroupMessage):
                     i, pic = pic_support(i)
                     logger.debug('cut '+i+'\n'+pic)
                     if pic != None:
-                        await bot.send(event, [i, Image(path='.\data\pic\\'+pic)])
+                        await bot.send(event, [i, Image(path='.\data\pic\group\\'+groupid+'\\'+pic)])
                     else:
                         await bot.send(event, i)
                 time.sleep(1)
@@ -1660,7 +1704,7 @@ async def bhrkhrt(event: GroupMessage):
                 reply = replace_alias(reply)
                 reply, pic = pic_support(reply)
                 if pic != None:
-                    await bot.send(event, [reply, Image(path='.\data\pic\group\\'+pic)])
+                    await bot.send(event, [reply, Image(path='.\data\pic\group\\'+groupid+'\\'+pic)])
                 else:
                     await bot.send(event, reply)
                 if love != 0 and love != None:
@@ -1677,6 +1721,14 @@ async def ffwsfcs(event: GroupMessage):
     groupid = str(event.sender.group.id)
     qq = str(event.sender.id)
     a = check_admin(groupid, qq)
+
+    def find_images(path, filename):
+        image_formats = ['*.jpeg', '*.jpg', '*.png']
+        for format_ in image_formats:
+            files = glob.glob(os.path.join(path, filename + format_))
+            if files:
+                return os.path.basename(files[0])
+        return None
     if msg.startswith('/set senior '):
         if qq == master:
             msg = msg.replace('/set senior ', '')
@@ -1712,6 +1764,14 @@ async def ffwsfcs(event: GroupMessage):
             msg = msg.split(' ', 1)
             question = msg[0]
             answer = msg[1]
+            if Image in event.message_chain:
+                image = event.message_chain[Image][0]
+                answer = answer.replace('[图片]', '')
+                path = check_group_folder(groupid)
+                filename = generate_random_string()
+                await image.download(filename=f'{path}{filename}.jpeg')
+                add = find_images(path, filename)
+                answer = f'{answer}[pic={add}]'
             group_write(groupid, question, answer, '1')
             await bot.send(event, '成功设置回复喵~')
             logger.debug('写入新回复')
@@ -1721,6 +1781,14 @@ async def ffwsfcs(event: GroupMessage):
             msg = msg.split(' ', 1)
             question = msg[0]
             answer = msg[1]
+            if Image in event.message_chain:
+                image = event.message_chain[Image][0]
+                answer = answer.replace('[图片]', '')
+                path = check_group_folder(groupid)
+                filename = generate_random_string()
+                await image.download(filename=f'{path}{filename}.jpeg')
+                add = find_images(path, filename)
+                answer = f'{answer}[pic={add}]'
             group_write(groupid, question, answer, '2')
             await bot.send(event, '成功设置回复喵~')
             logger.debug('写入新回复')
