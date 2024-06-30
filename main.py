@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import numpy as np
 import base64
+import qianfan
 import jieba
 import glob
 import sqlite3
@@ -34,7 +35,7 @@ import asyncio
 import inspect
 import websockets
 
-py_version = 'v1.42'
+py_version = 'v1.43'
 
 data_dir = './data/'
 db_path = os.path.join(data_dir, 'qq.db3')
@@ -157,13 +158,25 @@ def loadconfig():
     a, b = (value.strip() for value in common_love.split(','))
     search_love = config.get('others', 'search_love_reply')
     ws = config.get('others', 'ws')
-    react = config.get('others', '@_react')
+    react = config.get('ai', '@_react')
     ws_port = config.getint('others', 'ws_port')
+    model = config.get('ai', 'model')
+    role = config.get('ai', 'role')
+    API_Key = config.get('ai', 'API_Key')
+    Secret_Key = config.get('ai', 'Secret_Key')
     logger.info('config.ini第一部分已成功加载')
-    return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port
+    return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port, model, role, API_Key, Secret_Key
 
 
-bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port = loadconfig()
+bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port, model, role, API_Key, Secret_Key = loadconfig()
+# 初始化ai回复
+if botreact != 'True' or model == 'qingyunke':
+    del role, API_Key, Secret_Key
+else:
+    os.environ["QIANFAN_AK"] = API_Key
+    os.environ["QIANFAN_SK"] = Secret_Key
+logger.info('ai对话初始化完成')
+
 # logger.debug(bot_qq+'\n'+verify_key+'\n'+host+'\n'+port+'\n'+bot_name+'\n'+master+'\n'+lv_enable)
 df.iloc[:, 2] = df.iloc[:, 2].fillna(f'({Ca},{Cb})')
 del Ca, Cb
@@ -270,6 +283,18 @@ except:
 del py_update
 del py_version
 time.sleep(3)
+
+
+async def baidu_ai(msg: str) -> str:
+    '''
+    通过百度模型获得ai回复
+    '''
+    resp = qianfan.ChatCompletion().do(endpoint=model,
+                                       messages=[{"role": "user", "content": msg}], temperature=0.98, top_p=0.7, penalty_score=1, system=role, max_output_tokens=60)
+    try:
+        return resp['result']
+    except:
+        return '模型填写错误喵~猫闹过载ing'
 
 
 def choose_pic(qq, images_dir='./data/images/'):
@@ -556,38 +581,38 @@ def group_write(groupid: str, question: str, answer: str, type: str):
     logger.debug('写入成功')
 
 
-def group_del(groupid, question):  
-    # 构造文件路径  
-    file_path = os.path.join('./data/group', f"{groupid}.csv")  
-    global groups_df  
-  
-    if groupid in groups_df:  
-        df = groups_df[groupid]  
-  
-        # 找到与question完全匹配且Status不为locked的行  
-        mask = (df['Question'] == question) & (df['Status'] != 'locked')  
-        rows_to_delete = df[mask].index.tolist()  
-  
-        # 从后向前删除行，避免索引变化影响迭代  
-        for index in sorted(rows_to_delete, reverse=True):  
-            row = df.iloc[index]  
-            if '[pic=' in row['Answer']:  
-                _, path = pic_support(row['Answer'])  
-                try:  
-                    os.remove(f'./data/pic/group/{groupid}/{path}')  
-                except FileNotFoundError:  
-                    logger.warning(f"文件 {path} 未找到，无法删除。")  
-            # 删除DataFrame中的行  
-            df.drop(index, inplace=True)  
-  
-        # 将修改后的DataFrame写回CSV文件  
-        df.to_csv(file_path, index=False)  
-  
-        # 更新全局变量  
-        groups_df[groupid] = df  
-  
-        logger.debug('删除成功')  
-    else:  
+def group_del(groupid, question):
+    # 构造文件路径
+    file_path = os.path.join('./data/group', f"{groupid}.csv")
+    global groups_df
+
+    if groupid in groups_df:
+        df = groups_df[groupid]
+
+        # 找到与question完全匹配且Status不为locked的行
+        mask = (df['Question'] == question) & (df['Status'] != 'locked')
+        rows_to_delete = df[mask].index.tolist()
+
+        # 从后向前删除行，避免索引变化影响迭代
+        for index in sorted(rows_to_delete, reverse=True):
+            row = df.iloc[index]
+            if '[pic=' in row['Answer']:
+                _, path = pic_support(row['Answer'])
+                try:
+                    os.remove(f'./data/pic/group/{groupid}/{path}')
+                except FileNotFoundError:
+                    logger.warning(f"文件 {path} 未找到，无法删除。")
+            # 删除DataFrame中的行
+            df.drop(index, inplace=True)
+
+        # 将修改后的DataFrame写回CSV文件
+        df.to_csv(file_path, index=False)
+
+        # 更新全局变量
+        groups_df[groupid] = df
+
+        logger.debug('删除成功')
+    else:
         logger.warning(f"{file_path}不存在")
 
 
@@ -2165,17 +2190,25 @@ async def fegsg(event: GroupMessage):
     def del_face(text: str) -> str:
         result = re.sub(face_del, '', text)
         return result
-    message = str(event.message_chain)
-    message = message.replace('[图片]', '').replace(bot_name, '菲菲')
+    message = event.message_chain.as_mirai_code()
+    message = re.sub(r'\[mirai:.*?\]', '', message)
+    # message = message.replace('[图片]', '').replace(bot_name, '菲菲')
+    if message == '':
+        return None
+    s = snownlp.SnowNLP(message)
+    sentiment_score = float(s.sentiments)
     reply = None
     isSend = False
     if bot_name in message or At(bot.qq) in event.message_chain:
         isSend = True
-        if message != '':
-            if At(bot.qq) in event.message_chain and botreact == 'True':
-                reply = await qingyunke(message)
+        if At(bot.qq) in event.message_chain and botreact == 'True':
             a = new_msg_judge(message)
             if a == True:
+                if sentiment_score <= 0.1 or model == 'qingyunke':
+                    message = message.replace(bot_name, '菲菲')
+                    reply = await qingyunke(message)
+                else:
+                    reply = await baidu_ai(message)
                 qq = str(event.sender.id)
                 message = message.replace('菲菲', '')
                 love = love_score(message)
@@ -2191,10 +2224,14 @@ async def fegsg(event: GroupMessage):
             else:
                 logger.debug('重复消息')
     m = random.random()
-    if m <= 0.006 and botreact == 'True' and message != '' and isSend == False:
-        reply = await qingyunke(message)
-        s = SnowNLP(message)
-        key = s.keywords(1)
+    if m <= 0.004 and botreact == 'True' and isSend == False:
+        if sentiment_score <= 0.1 or model == 'qingyunke':
+            message = message.replace(bot_name, '菲菲')
+            reply = await qingyunke(message)
+        else:
+            reply = await baidu_ai(message)
+        s2 = SnowNLP(message)
+        key = s2.keywords(1)
         qq = str(event.sender.id)
         message = message.replace('菲菲', '')
         love = love_score(message)
