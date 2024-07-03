@@ -1,4 +1,4 @@
-from mirai import Mirai, WebSocketAdapter, GroupMessage, Image, FriendMessage, At
+from mirai import Mirai, WebSocketAdapter, GroupMessage, Image, FriendMessage, At, MessageEvent
 from mirai_extensions.trigger.message import GroupMessageFilter, FriendMessageFilter
 from mirai_extensions.trigger import InterruptControl
 from PIL import ImageDraw, ImageFont
@@ -34,11 +34,13 @@ import json
 import asyncio
 import inspect
 import websockets
+# import shutil
 
-py_version = 'v1.43'
+py_version = 'v1.50'
 
 data_dir = './data/'
 db_path = os.path.join(data_dir, 'qq.db3')
+pd.StringDtype('pyarrow')
 
 # RL快速方法正则式
 WEIGHTED_CHOICE_PATTERN = re.compile(
@@ -164,11 +166,12 @@ def loadconfig():
     role = config.get('ai', 'role')
     API_Key = config.get('ai', 'API_Key')
     Secret_Key = config.get('ai', 'Secret_Key')
+    tank_enable = config.get('others', 'tank_enable')
     logger.info('config.ini第一部分已成功加载')
-    return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port, model, role, API_Key, Secret_Key
+    return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port, model, role, API_Key, Secret_Key, tank_enable
 
 
-bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port, model, role, API_Key, Secret_Key = loadconfig()
+bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port, model, role, API_Key, Secret_Key, tank_enable = loadconfig()
 # 初始化ai回复
 if botreact != 'True' or model == 'qingyunke':
     del role, API_Key, Secret_Key
@@ -283,6 +286,14 @@ except:
 del py_update
 del py_version
 time.sleep(3)
+
+'''
+def clear_group_not_exist(groupid:str)->None:
+    #清理退出群聊文件
+    shutil.rmtree(f'./data/group/{groupid}')
+    shutil.rmtree(f'./data/pic/group/{groupid}')
+    logger.debug(f'{groupid}文件已清理')
+'''
 
 
 async def baidu_ai(msg: str) -> str:
@@ -501,6 +512,10 @@ def write_admin(groupid, type_, qq, filename='./data/admin.json'):
     # 检查type_是否有效
     if type_ not in ['high', 'common']:
         raise ValueError("Invalid type. It should be 'high' or 'common'.")
+
+    isAdmin = check_admin(qq)
+    if isAdmin == type_:
+        return None
 
     # 将qq添加到对应type_的列表中
     admin_data[groupid][type_].append(qq)
@@ -1591,6 +1606,113 @@ def load_info(groupid: str, row: int) -> list:
         return None
 
 
+def hidden_pic(out_pic: str, hidden_pic: str, type: int) -> str:
+    """制作幻影坦克
+
+    Args:
+        out_pic (url): 表图
+        hidden_pic (url): 里图
+        type (int): 0为黑白幻影坦克,1为彩色幻影坦克(当前彩坦因效果不理想暂不添加)
+
+    Returns:
+        str(base64): 幻影坦克图片
+    """
+    from PIL import Image
+
+    def get_pic(url):
+        response = requests.get(url)
+        image_bytes = response.content
+        pic = Image.open(BytesIO(image_bytes))
+        return pic
+
+    image_f = get_pic(out_pic)
+    image_b = get_pic(hidden_pic)
+    if type == 0:  # 黑白图像
+        # 提取宽度和高度信息
+        w_f, h_f = image_f.size
+        w_b, h_b = image_b.size
+
+        # 确定最小宽度和高度
+        w_min = min(w_f, w_b)
+        h_min = min(h_f, h_b)
+
+        # 创建一个新的RGBA图像
+        new_image = Image.new('RGBA', (w_min, h_min))
+
+        # 将图片转换为灰度图
+        image_f = image_f.convert('L')
+        image_b = image_b.convert('L')
+
+        # 加载像素数据到数组中
+        array_f = image_f.load()
+        array_b = image_b.load()
+
+        # 计算缩放因子
+        scale_h_f = h_f / h_min
+        scale_w_f = w_f / w_min
+        scale_h_b = h_b / h_min
+        scale_w_b = w_b / w_min
+
+        # 确定参考缩放比例
+        scale_f = min(scale_h_f, scale_w_f)
+        scale_b = min(scale_h_b, scale_w_b)
+
+        # 计算平移值
+        trans_f_x = (w_f - w_min * scale_f) / 2
+        trans_b_x = (w_b - w_min * scale_b) / 2
+
+        # 设置校正参数
+        a = 10
+        b = 6
+
+        # 创建一个新的图像缓冲区来存储像素数据
+        buffer = io.BytesIO()
+
+        # 遍历新图像中的每个像素
+        for i in range(w_min):
+            for j in range(h_min):
+                # 计算调整后的像素坐标
+                mean_f = array_f[int(trans_f_x + i * scale_f),
+                                 int(j * scale_f)]
+                mean_b = array_b[int(trans_b_x + i * scale_b),
+                                 int(j * scale_b)]
+
+        # 计算新的像素值
+                mean_f = mean_f * a / 10
+                mean_b = mean_b * b / 10
+
+                A_new = int(255 - mean_f + mean_b)
+
+                if A_new == 0:
+                    mean_new = 0
+                elif A_new >= 255:
+                    A_new = 255
+                    mean_new = int((255 * mean_b) / A_new)
+                else:
+                    mean_new = int((255 * mean_b) / A_new)
+
+                pixel_new = (mean_new, mean_new, mean_new, A_new)
+
+        # 将像素放入新图像中
+                new_image.putpixel((i, j), pixel_new)
+
+        # 将新图像保存为base64编码的PNG格式
+        buffered = io.BytesIO()
+        new_image.save(buffered, format='PNG')
+        encoded_image = buffered.getvalue()
+        encoded_image = base64.b64encode(encoded_image)
+       # encoded_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        return encoded_image
+    # elif type==1:      #彩色图像，效果不好
+    # 技术尚不成熟，暂不添加
+
+
+def mark_achieve():
+    '''用于标记已经处理的事件'''
+    global isAchieve
+    isAchieve = True
+
+
 if __name__ == '__main__':
     bot = Mirai(
         qq=bot_qq,  # 改成你的机器人的 QQ 号
@@ -1600,11 +1722,21 @@ if __name__ == '__main__':
     )
 inc = InterruptControl(bot)
 
+isAchieve = False
 
-@bot.on(GroupMessage)
-async def bhrkhrt(event: GroupMessage):
+
+@bot.on(MessageEvent, priority=0)
+def reset_isAchieve(event: MessageEvent):
+    global isAchieve
+    isAchieve = False
+
+
+@bot.on(GroupMessage, priority=2)
+async def bhrkhrt(event: GroupMessage):  # 词库功能实现
     message = str(event.message_chain)
-    if message.startswith('/') or message.startswith('.') or message.startswith('*') or message.startswith('-') or message.startswith('查询 ') or message.startswith('模糊问 ') or message.startswith('精确问 ') or message.startswith('删除 '):
+    # if message.startswith('/') or message.startswith('.') or message.startswith('*') or message.startswith('-') or message.startswith('查询 ') or message.startswith('模糊问 ') or message.startswith('精确问 ') or message.startswith('删除 '):
+    #    return None
+    if isAchieve == True:
         return None
     qq = str(event.sender.id)
     if qq == bot_qq:
@@ -1671,7 +1803,8 @@ async def bhrkhrt(event: GroupMessage):
             if love != 0 and love != None:
                 updata_love(qq, love)
                 logger.debug('已更新用户好感')
-            return None
+        mark_achieve()
+        return None
     except:
         pass
 
@@ -1735,13 +1868,16 @@ async def bhrkhrt(event: GroupMessage):
                 if love != 0 and love != None:
                     updata_love(qq, love)
                     logger.debug('已更新用户好感')
-                return None
+            mark_achieve()
+            return None
         except:
             pass
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def ffwsfcs(event: GroupMessage):
+    if isAchieve == True:
+        return None
     msg = str(event.message_chain)
     groupid = str(event.sender.group.id)
     qq = str(event.sender.id)
@@ -1760,29 +1896,34 @@ async def ffwsfcs(event: GroupMessage):
             write_admin(groupid, 'high', msg)
             await bot.send(event, '成功设置高管喵~')
             logger.debug('设置'+msg+'为'+groupid+'高管')
+            mark_achieve()
     elif msg.startswith('/set admin '):
         if qq == master or a == 'high':
             msg = msg.replace('/set admin ', '')
             write_admin(groupid, 'common', msg)
             await bot.send(event, '成功设置管理喵~')
             logger.debug('设置'+msg+'为'+groupid+'管理')
+            mark_achieve()
     elif msg.startswith('/del admin '):
         if qq == master or a == 'high':
             msg = msg.replace('/del admin ', '')
             del_admin(groupid, msg)
             await bot.send(event, '成功取消管理喵~')
             logger.debug('取消'+msg+'为'+groupid+'管理')
+            mark_achieve()
     elif msg.startswith('/del senior '):
         if qq == master:
             msg = msg.replace('/del senior ', '')
             del_admin_high(groupid, msg)
             await bot.send(event, '成功取消高管喵~')
             logger.debug('取消'+msg+'为'+groupid+'高管')
+            mark_achieve()
     elif msg.startswith('删除 '):
         if qq == master or a != False:
             question = msg.replace('删除 ', '')
             group_del(groupid, question)
             await bot.send(event, '成功删除回复喵~')
+            mark_achieve()
     elif msg.startswith('精确问 '):
         if qq == master or a != False:
             msg = msg.replace('精确问 ', '')
@@ -1800,6 +1941,7 @@ async def ffwsfcs(event: GroupMessage):
             group_write(groupid, question, answer, '1')
             await bot.send(event, '成功设置回复喵~')
             logger.debug('写入新回复')
+            mark_achieve()
     elif msg.startswith('模糊问 '):
         if qq == master or a != False:
             msg = msg.replace('模糊问 ', '')
@@ -1817,6 +1959,7 @@ async def ffwsfcs(event: GroupMessage):
             group_write(groupid, question, answer, '2')
             await bot.send(event, '成功设置回复喵~')
             logger.debug('写入新回复')
+            mark_achieve()
     elif msg.startswith('查询 '):
         if qq == master or a != False:
             msg = msg.replace('查询 ', '')
@@ -1827,6 +1970,7 @@ async def ffwsfcs(event: GroupMessage):
                 reply_answer = reply_answer+answer+'\n'
             await bot.send(event, reply_answer+'请使用/dr指令删除指定行喵~')
             del reply_answer
+            mark_achieve()
     elif msg.startswith('/dr '):
         if qq == master or a != False:
             msg = msg.replace('/dr ', '')
@@ -1840,6 +1984,8 @@ async def ffwsfcs(event: GroupMessage):
                 await bot.send(event, msg)
             except:
                 await bot.send(event, '删除指定行失败喵~')
+            finally:
+                mark_achieve()
     elif msg.startswith('/lock '):
         if qq == master or a == 'high':
             msg = msg.replace('/lock ', '')
@@ -1849,6 +1995,8 @@ async def ffwsfcs(event: GroupMessage):
                 await bot.send(event, '锁定成功喵~')
             except:
                 await bot.send(event, '输入不合法喵~行号可通过 查询 指令获取喵~')
+            finally:
+                mark_achieve()
     elif msg.startswith('/unlock '):
         if qq == master or a == 'high':
             msg = msg.replace('/unlock ', '')
@@ -1858,6 +2006,8 @@ async def ffwsfcs(event: GroupMessage):
                 await bot.send(event, '解锁成功喵~')
             except:
                 await bot.send(event, '输入不合法喵~行号可通过 查询 指令获取喵~')
+            finally:
+                mark_achieve()
     elif msg.startswith('/info '):
         if qq == master or a != False:
             msg = msg.replace('/info ', '')
@@ -1871,16 +2021,21 @@ async def ffwsfcs(event: GroupMessage):
                 await bot.send(event, reply)
             except:
                 await bot.send(event, '输入不合法喵~行号可通过 查询 指令获取喵~')
+            finally:
+                mark_achieve()
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def sadxchjw(event: GroupMessage):
+    if isAchieve == True:
+        return None
     if str(event.message_chain) == '我的好感度' or str(event.message_chain) == '我的好感':
         qq = str(event.sender.id)
         int_love, str_love = get_both_love(qq)
         if str_love != '' or None:
             if lv_enable == 'False':
                 await bot.send(event, '你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
+                mark_achieve()
             elif lv_enable == "True":
                 name = event.sender.get_name()
                 name = str(name)
@@ -1923,6 +2078,7 @@ async def sadxchjw(event: GroupMessage):
                         await bot.send(event, bot_name+'不想理你\n'+str_love)
                     else:
                         await bot.send(event, bot_name+'很中意你\n'+str_love)
+                mark_achieve()
             else:
                 logger.error('enable参数填写错误,应为True或False')
                 logger.error('程序将在5秒后退出')
@@ -1930,8 +2086,10 @@ async def sadxchjw(event: GroupMessage):
                 sys.exit
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def gegvsgverg(event: GroupMessage):
+    if isAchieve == True:
+        return None
     msg = str(event.message_chain)
     if msg.startswith('查询好感'):
         msg = msg.replace('查询好感', '')
@@ -1959,9 +2117,10 @@ async def gegvsgverg(event: GroupMessage):
             await bot.send(event, reply)
         else:
             await bot.send(event, '查无此人喵~')
+        mark_achieve()
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def jjjjjj(event: GroupMessage):
     if bot_name in str(event.message_chain):
         a = random.random()
@@ -1993,7 +2152,37 @@ async def jjjjjj(event: GroupMessage):
                         logger.debug('CG发送成功')
 
 
-@bot.on(FriendMessage)
+@bot.on(GroupMessage, priority=1)
+async def fascfvnewjk(event: GroupMessage):
+    if isAchieve == True or tank_enable != 'True':
+        return None
+    msg = str(event.message_chain)
+    if msg == '/gtank':
+        mark_achieve()
+        await bot.send(event, '请在120s内中发送表图喵~')
+
+        @GroupMessageFilter(group_member=event.sender)
+        def T114514(event_new: GroupMessage):
+            if Image in event_new.message_chain:
+                out_image = event_new.message_chain[Image][0]
+                return out_image
+        out_image = await inc.wait(T114514, timeout=120)
+        out_image = out_image.url
+        await bot.send(event, '请在120s内发送里图喵~')
+
+        @GroupMessageFilter(group_member=event.sender)
+        def T114514_2(event_new: GroupMessage):
+            if Image in event_new.message_chain:
+                hidden_image = event_new.message_chain[Image][0]
+                return hidden_image
+        hidden_image = await inc.wait(T114514_2, timeout=120)
+        hidden_image = hidden_image.url
+        tank = hidden_pic(out_image, hidden_image, 0)
+        logger.debug('合成幻影坦克')
+        await bot.send(event, Image(base64=tank), True)
+
+
+@bot.on(FriendMessage, priority=1)
 async def hhhhhh(event: FriendMessage):
     qq = str(event.sender.id)
     msg = str(event.message_chain)
@@ -2077,15 +2266,17 @@ async def hhhhhh(event: FriendMessage):
             logger.debug('pic_code取消生成')
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def dewcfvew(event: GroupMessage):
     global reply_b
     qq_list = None
     reply_b = str('好♡感♡排♡行\n')
     if str(event.message_chain) == '好感排行':
         qq_list = GlobalCompare()
+        mark_achieve()
     elif str(event.message_chain) == '好人榜':
         qq_list = get_low_ten_qqs()
+        mark_achieve()
     if qq_list != None:
         for i in qq_list:
             a = str(i)
@@ -2096,8 +2287,10 @@ async def dewcfvew(event: GroupMessage):
     del reply_b
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def dewcfvew(event: GroupMessage):
+    if isAchieve == True:
+        return None
     global reply_a
     reply_a = str('本群 好♡感♡排♡行\n')
     if str(event.message_chain) == '本群好感排行':
@@ -2116,12 +2309,16 @@ async def dewcfvew(event: GroupMessage):
         reply_a = replace_alias(reply_a)
         await bot.send(event, reply_a + '--------\n喵呜~~~')
         del reply_a
+        mark_achieve()
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def alias(event: GroupMessage):
+    if isAchieve == True:
+        return None
     message = str(event.message_chain)
     if message.startswith('/code alias '):
+        mark_achieve()
         message = message.replace('/code alias ', '')
         b = check_alias_code(message)
         if b == True:
@@ -2139,10 +2336,11 @@ async def alias(event: GroupMessage):
             await bot.send(event, '您的QQ别名已设置为:'+msg+' 喵~')
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def strqq(event: GroupMessage):
     message = str(event.message_chain)
     if message.startswith('/code love '):
+        mark_achieve()
         message = message.replace('/code love ', '')
         b = check_love_code(message)
         if b == True:
@@ -2161,10 +2359,11 @@ async def strqq(event: GroupMessage):
             await bot.send(event, '您的文本好感已设置为:'+msg+' 喵~')
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def picqq(event: GroupMessage):
     message = str(event.message_chain)
     if message.startswith('/code pic '):
+        mark_achieve()
         message = message.replace('/code pic ', '')
         b = check_pic_code(message)
         if b == True:
@@ -2185,8 +2384,11 @@ async def picqq(event: GroupMessage):
             await bot.send(event, '您的pic已设置喵~', True)
 
 
-@bot.on(GroupMessage)
+@bot.on(GroupMessage, priority=1)
 async def fegsg(event: GroupMessage):
+    if isAchieve == True:
+        return None
+
     def del_face(text: str) -> str:
         result = re.sub(face_del, '', text)
         return result
@@ -2195,13 +2397,15 @@ async def fegsg(event: GroupMessage):
     # message = message.replace('[图片]', '').replace(bot_name, '菲菲')
     if message == '':
         return None
-    s = snownlp.SnowNLP(message)
-    sentiment_score = float(s.sentiments)
+    # s = snownlp.SnowNLP(message)
+    # sentiment_score = float(s.sentiments)
     reply = None
     isSend = False
     if bot_name in message or At(bot.qq) in event.message_chain:
         isSend = True
         if At(bot.qq) in event.message_chain and botreact == 'True':
+            s = snownlp.SnowNLP(message)
+            sentiment_score = float(s.sentiments)
             a = new_msg_judge(message)
             if a == True:
                 if sentiment_score <= 0.1 or model == 'qingyunke':
@@ -2223,8 +2427,11 @@ async def fegsg(event: GroupMessage):
                     await bot.send(event, reply, True)
             else:
                 logger.debug('重复消息')
+            mark_achieve()
     m = random.random()
     if m <= 0.004 and botreact == 'True' and isSend == False:
+        s = snownlp.SnowNLP(message)
+        sentiment_score = float(s.sentiments)
         if sentiment_score <= 0.1 or model == 'qingyunke':
             message = message.replace(bot_name, '菲菲')
             reply = await qingyunke(message)
@@ -2251,6 +2458,7 @@ async def fegsg(event: GroupMessage):
             reply = reply.replace('菲菲', bot_name)
             reply = del_face(reply)
             await bot.send(event, [At(int(qq)), ' '+reply])
+        mark_achieve()
 
 # 函数注册表
 function_registry = {
@@ -2311,6 +2519,8 @@ def real_start_server():
 ws_thread = threading.Thread(target=real_start_server)
 if ws == "True":
     ws_thread.start()
+else:
+    logger.info('ws服务被禁用')
 del ws
 retry = False
 try:
@@ -2329,4 +2539,4 @@ try:
             logger.warning('无法连接到mirai。30s后尝试重连。')
             time.sleep(30)
 except KeyboardInterrupt:
-    logger.info('取消重连尝试,现仅启用ws')
+    logger.info('取消重连尝试,现仅启用ws/空载运行')
