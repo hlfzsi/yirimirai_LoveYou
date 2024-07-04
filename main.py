@@ -513,7 +513,7 @@ def write_admin(groupid, type_, qq, filename='./data/admin.json'):
     if type_ not in ['high', 'common']:
         raise ValueError("Invalid type. It should be 'high' or 'common'.")
 
-    isAdmin = check_admin(qq)
+    isAdmin = check_admin(groupid, qq)
     if isAdmin == type_:
         return None
 
@@ -728,6 +728,7 @@ def love_score(text: str, target_min=-10, target_max=10):
 
 
 def generate_codes(a, b):
+    '''a为数目,b为类型'''
     if b == 0:
         filename = './data/alias_code.txt'
     elif b == 1:
@@ -1752,7 +1753,7 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
         reply = str(reply)
 
         if reply.startswith('RL'):  # RL快速方法
-            reply = reply.replace('RL', '')
+            # reply = reply.replace('RL', '')
             reply, love = RL_support(reply)
             logger.debug('RL '+reply)
 
@@ -1816,7 +1817,7 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
                 raise Exception
             reply = str(reply)
             if reply.startswith('RL'):  # RL快速方法
-                reply = reply.replace('RL', '')
+                # reply = reply.replace('RL', '')
                 reply, love = RL_support(reply)
                 love = 0
                 logger.debug('RL '+reply)
