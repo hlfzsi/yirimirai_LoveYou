@@ -8,7 +8,7 @@
 * [mirai](https://github.com/mamoe/mirai)——高效率 QQ 机器人支持库
 * [mirai-api-http](https://github.com/project-mirai/mirai-api-http)——提供HTTP API供所有语言使用mirai。
 ****
-## 项目简介项目简介
+## 项目简介
 **LoveYou是一个高性能的、可高度自定义的词库+好感度系统插件**
 <br>
 **在v1.50及以后，内存占用降低至170MB左右**
