@@ -18,7 +18,10 @@
 * 好感度系统是完全兼容词库且高效的
 * 项目是灵动的，而非死气沉沉的
 <br>
-本项目release包性能表现：已知2w行的词库可瞬间回复。[测试用词库](https://github.com/hlfzsi/yirimirai_LoveYou/blob/main/example/reply.csv)
+本项目release包性能表现：已知2w行的词库可瞬间回复。<br>
+[测试用词库](https://github.com/hlfzsi/yirimirai_LoveYou/blob/main/example/reply.csv)
+
+<br>
 ****
 ## 快速上手
 本项目仅支持64位系统<br>
