@@ -26,7 +26,7 @@
 ## 快速上手
 本项目仅支持64位系统<br>
 首先，请正确配置mirai-api-http<br>
-[mirai-api-http参考配置](https://github.com/avilliai/wReply/blob/master/setting.yml)
+[mirai-api-http参考配置](https://github.com/avilliai/wReply/blob/master/setting.yml)<br>
 需要注意，本项目仅支持正向ws<br>
 之后，你需要确认config.ini填写无误
 
