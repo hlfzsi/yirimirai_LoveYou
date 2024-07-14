@@ -73,8 +73,8 @@ lv4_reply=
 
 lv5=1000,9999
 lv5_reply=
-
 ```
+
 1.**Windows**<br>
  下载最新的[release](https://github.com/hlfzsi/yirimirai_LoveYou/releases)，解压，填写config.ini，编辑你的reply.csv，启动exe即可<br>
 2.**Linux**
@@ -227,12 +227,15 @@ LoveYou的默认ws端口为8686<br>
 7. love_score ： 对文本进行情感分析，返回一个经过处理的好感变化值<br>text：需要分析的文本<br>
 #### json示例
 变量的存在与否以及存在顺序都是严格的
+
+
 ```
 {  
   "type": "get_love",
   "qq": "123456789"  
 }
 ```
+
 ```
 {  
   "type": "isAdmin",
@@ -240,6 +243,8 @@ LoveYou的默认ws端口为8686<br>
   "qq":"123456789"
 }
 ```
+
+
 #### 返回示例
 序号与接口介绍序号一一对应<br>其中，{   }内容为你需要的返回值，{   }在真实返回中不存在<br>如果调用错误，LoveYou会返回错误原因。若调用成功而LoveYou内部函数错误，会返回Fail
 1. {int_love}|||{str_love}<br>str_love为int_love加上用户好感后缀<br>
