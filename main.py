@@ -36,7 +36,7 @@ import inspect
 import websockets
 # import shutil
 
-py_version = 'v1.50'
+py_version = 'v1.51'
 
 data_dir = './data/'
 db_path = os.path.join(data_dir, 'qq.db3')
@@ -167,11 +167,16 @@ def loadconfig():
     API_Key = config.get('ai', 'API_Key')
     Secret_Key = config.get('ai', 'Secret_Key')
     tank_enable = config.get('others', 'tank_enable')
+    memory = config.get('ai', 'memory')
+    if memory == 'True':
+        memory = True
+    else:
+        memory = False
     logger.info('config.ini第一部分已成功加载')
-    return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port, model, role, API_Key, Secret_Key, tank_enable
+    return bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, a, b, search_love, ws, react, ws_port, model, role, API_Key, Secret_Key, tank_enable, memory
 
 
-bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port, model, role, API_Key, Secret_Key, tank_enable = loadconfig()
+bot_qq, verify_key, host, port, bot_name, baseline, rate, master, lv_enable, Ca, Cb, search_love_reply, ws, botreact, ws_port, model, role, API_Key, Secret_Key, tank_enable, memory = loadconfig()
 # 初始化ai回复
 if botreact != 'True' or model == 'qingyunke':
     del role, API_Key, Secret_Key
@@ -204,6 +209,22 @@ def get_range(value):
     else:
         logger.debug('未获得lv')
         return None  # 返回None表示不属于任何已知范围
+
+
+def ws_get_range(qq):
+    try:
+        love = read_love(qq)
+        try:
+            lv = get_range(int(love))
+        except:
+            lv = -1
+        if lv == None and love >= 0:
+            lv = 6
+        elif lv == None and love < 0:
+            lv = 0
+        return lv
+    except:
+        return 'Fail'
 
 
 def loadconfig_part2():
@@ -296,12 +317,92 @@ def clear_group_not_exist(groupid:str)->None:
 '''
 
 
-async def baidu_ai(msg: str) -> str:
+def chat_memory(qq: str, question: str, answer: str):
+    """处理用户对话
+
+    如果answer为空,则只添加question并返回字符串.文件不保留.
+
+    如果answer非空,无return,保留修改
+
+    Args:
+        qq (str): 用户
+        question (str): 用户消息
+        answer (str): 回复消息
+    """
+    # 构造文件路径
+    file_path = os.path.join('./data/memory', f'{qq}.json')
+
+    # 确保目录存在
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # 初始化聊天记录列表，如果文件不存在则为空列表
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            records = json.load(file)
+    except:
+        records = []
+
+    # 如果answer不是空字符串，则添加新的聊天记录
+    if answer:  # 检查answer是否为非空字符串
+        records.append({"role": "user", "content": question})
+        records.append({"role": "assistant", "content": answer})
+        records_json = json.dumps(records, ensure_ascii=False, indent=4)
+        with open(file_path, 'w', encoding='utf-8') as file:
+            json.dump(records, file, ensure_ascii=False, indent=4)
+        return None
+    else:
+        records.append({"role": "user", "content": question})
+        records_json = json.dumps(records, ensure_ascii=False, indent=4)
+        records_json = json.loads(records_json)
+        return records_json
+
+
+def clear_memory(qq: str):
+    file_path = os.path.join('./data/memory', f'{qq}.json')
+    try:
+        os.remove(file_path)
+    except:
+        pass
+
+
+def reduce_memory(qq: str):
+    file_path = f"./data/memory/{qq}.json"
+    with open(file_path, 'r', encoding='utf-8') as file:
+        data = json.load(file)
+    del data[:2]
+    with open(file_path, 'w', encoding='utf-8') as file:
+        json.dump(data, file, ensure_ascii=False, indent=4)
+
+
+async def baidu_ai(msg: str, qq: str, intlove, name: str) -> str:
     '''
     通过百度模型获得ai回复
     '''
-    resp = qianfan.ChatCompletion().do(endpoint=model,
-                                       messages=[{"role": "user", "content": msg}], temperature=0.98, top_p=0.7, penalty_score=1, system=role, max_output_tokens=60)
+    intlove = str(intlove)
+    time = datetime.now()
+    time = time.strftime("%Y-%m-%d.%H:%M")
+    loacl_role = role
+    loacl_role = loacl_role.replace(
+        '[intlove]', intlove).replace('[sender]', name).replace('[time]', time)
+    if memory == True:
+        send_msg = chat_memory(qq, msg, '')
+        while len(send_msg) + len(loacl_role) >= 24000:
+            reduce_memory(qq)
+            send_msg = chat_memory(qq, msg, '')
+        resp = qianfan.ChatCompletion().do(model=model,
+                                           messages=send_msg, temperature=0.98, top_p=0.7, penalty_score=1, system=loacl_role)
+        try:
+            chat_memory(qq, msg, resp['result'])
+            if resp['need_clear_history'] == True or resp['need_clear_history'] == 'True':
+                clear_memory(qq)
+                logger.debug('清理用户记忆')
+        except:
+            pass
+
+    elif memory == False:
+        resp = qianfan.ChatCompletion().do(model=model,
+                                           messages=[{"role": "user", "content": msg}], temperature=0.98, top_p=0.7, penalty_score=1, system=loacl_role)
+
     try:
         return resp['result']
     except:
@@ -1146,8 +1247,6 @@ def get_global_reply(search_term: str, m: int) -> Tuple[str, int]:
         except ValueError:  # 如果无法转换为整数
             return True
 
-    # 第四列是字符串形式的范围，如"(1, 5)"
-    # 或者第四列可能包含空值或无法转换为整数的字符串
     valid_matches = matches.apply(is_m_in_range, axis=1)
     valid_matches = matches[valid_matches]
 
@@ -1218,8 +1317,9 @@ def groups_reply(groupid, search_term, m):
         # 或者第四列可能包含空值或无法转换为整数的字符串
         valid_matches = matches.apply(is_m_in_range, axis=1)
         valid_matches = matches[valid_matches]
+        if valid_matches.empty:
+            return None, None
 
-        # 如果没有找到匹配的行，返回None
         if valid_matches.empty:
             return None, None
 
@@ -1331,6 +1431,36 @@ def read_love(qq):
             conn.commit()
             # 新增后默认返回0
             return 0
+
+
+def get_loverank(qq: str) -> Tuple[str, str]:
+    '''返回用户好感排名与整张表记录数'''
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM qq_love")
+        total_records = cursor.fetchone()[0]
+
+        cursor.execute("""  
+            SELECT RANK() OVER (ORDER BY love DESC) AS rn  
+            FROM qq_love  
+            WHERE QQ = ?  
+        """, (qq,))
+        rank_result = cursor.fetchone()
+
+        if rank_result:
+            rank = rank_result[0]
+            return str(rank), str(total_records)
+        else:
+            return 'Unfound', str(total_records)
+
+
+def ws_get_rank(qq):
+    try:
+        rank, total = get_loverank(str(qq))
+        return f"{rank}|{total}"
+    except:
+        return "Fail"
 
 
 def read_love_only(qq):
@@ -1551,7 +1681,7 @@ def lock_row(groupid: str, rows: list[str], type: int) -> None:
     if groupid in groups_df:
         df = groups_df[groupid]
 
-       # 遍历字符串列表并尝试锁定相应的行
+        # 遍历字符串列表并尝试锁定相应的行
         for row_str in rows:
 
             # 尝试将字符串转换为整数
@@ -1702,10 +1832,22 @@ def hidden_pic(out_pic: str, hidden_pic: str, type: int) -> str:
         new_image.save(buffered, format='PNG')
         encoded_image = buffered.getvalue()
         encoded_image = base64.b64encode(encoded_image)
-       # encoded_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
         return encoded_image
     # elif type==1:      #彩色图像，效果不好
     # 技术尚不成熟，暂不添加
+
+
+def isSilence(qq):
+    try:
+        global silence
+        if qq == True or qq == "True":
+            silence = True
+            return 'Success'
+        else:
+            silence = False
+            return 'Success'
+    except:
+        return 'Fail'
 
 
 def mark_achieve():
@@ -1723,7 +1865,8 @@ if __name__ == '__main__':
     )
 inc = InterruptControl(bot)
 
-isAchieve = False
+isAchieve = False  # 信号
+silence = False  # 词库沉默
 
 
 @bot.on(MessageEvent, priority=0)
@@ -1737,7 +1880,7 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
     message = str(event.message_chain)
     # if message.startswith('/') or message.startswith('.') or message.startswith('*') or message.startswith('-') or message.startswith('查询 ') or message.startswith('模糊问 ') or message.startswith('精确问 ') or message.startswith('删除 '):
     #    return None
-    if isAchieve == True:
+    if isAchieve == True or silence == True:
         return None
     qq = str(event.sender.id)
     if qq == bot_qq:
@@ -1756,7 +1899,6 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
             # reply = reply.replace('RL', '')
             reply, love = RL_support(reply)
             logger.debug('RL '+reply)
-
         if '[pos]' in reply:
             s = snownlp.SnowNLP(message)
             sentiment_score = s.sentiments
@@ -1773,6 +1915,7 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
                 return None
             else:
                 reply = reply.replace('[nag]', '')
+
         try:
             love = int(love)
         except:
@@ -1821,11 +1964,10 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
                 reply, love = RL_support(reply)
                 love = 0
                 logger.debug('RL '+reply)
-
             if '[pos]' in reply:
                 s = snownlp.SnowNLP(message)
                 sentiment_score = s.sentiments
-                if sentiment_score <= 0.7:
+                if sentiment_score <= 0.75:
                     logger.debug('拒绝发送')
                     return None
                 else:
@@ -1833,11 +1975,12 @@ async def bhrkhrt(event: GroupMessage):  # 词库功能实现
             if '[nag]' in reply:
                 s = snownlp.SnowNLP(message)
                 sentiment_score = s.sentiments
-                if sentiment_score >= 0.3:
+                if sentiment_score >= 0.25:
                     logger.debug('拒绝发送')
                     return None
                 else:
                     reply = reply.replace('[nag]', '')
+
             try:
                 love = int(love)
             except:
@@ -1891,6 +2034,11 @@ async def ffwsfcs(event: GroupMessage):
             if files:
                 return os.path.basename(files[0])
         return None
+    if msg == '/clear' and botreact == 'True':
+        clear_memory(qq)
+        await bot.send(event, '刚刚我们说什么了喵~')
+        mark_achieve()
+        logger.debug(f'{qq}记忆清除')
     if msg.startswith('/set senior '):
         if qq == master:
             msg = msg.replace('/set senior ', '')
@@ -1919,6 +2067,8 @@ async def ffwsfcs(event: GroupMessage):
             await bot.send(event, '成功取消高管喵~')
             logger.debug('取消'+msg+'为'+groupid+'高管')
             mark_achieve()
+    elif silence == True:
+        return None
     elif msg.startswith('删除 '):
         if qq == master or a != False:
             question = msg.replace('删除 ', '')
@@ -2034,7 +2184,7 @@ async def sadxchjw(event: GroupMessage):
         qq = str(event.sender.id)
         int_love, str_love = get_both_love(qq)
         if str_love != '' or None:
-            if lv_enable == 'False':
+            if lv_enable != 'True':
                 await bot.send(event, '你的好感度是：\n'+str_love+'\n————————\n(ˉ▽￣～) 切~~')
                 mark_achieve()
             elif lv_enable == "True":
@@ -2080,11 +2230,13 @@ async def sadxchjw(event: GroupMessage):
                     else:
                         await bot.send(event, bot_name+'很中意你\n'+str_love)
                 mark_achieve()
-            else:
-                logger.error('enable参数填写错误,应为True或False')
-                logger.error('程序将在5秒后退出')
-                time.sleep(5)
-                sys.exit
+    elif str(event.message_chain) == '我的排名':
+        qq = str(event.sender.id)
+        name = event.sender.get_name()
+        rank, total = get_loverank(qq)
+        await bot.send(event, [At(int(qq)), f'\n{name}的好感排名为[{rank}/{total}]'])
+        logger.debug('完成个人排名')
+        mark_achieve()
 
 
 @bot.on(GroupMessage, priority=1)
@@ -2402,32 +2554,40 @@ async def fegsg(event: GroupMessage):
     # sentiment_score = float(s.sentiments)
     reply = None
     isSend = False
+    name = str(event.sender.get_name())
+    qq = str(event.sender.id)
+    if memory != False:
+        intlove = read_love(qq)
+    else:
+        intlove = 0
     if bot_name in message or At(bot.qq) in event.message_chain:
         isSend = True
         if At(bot.qq) in event.message_chain and botreact == 'True':
             s = snownlp.SnowNLP(message)
             sentiment_score = float(s.sentiments)
             a = new_msg_judge(message)
-            if a == True:
-                if sentiment_score <= 0.1 or model == 'qingyunke':
-                    message = message.replace(bot_name, '菲菲')
-                    reply = await qingyunke(message)
-                else:
-                    reply = await baidu_ai(message)
-                qq = str(event.sender.id)
-                message = message.replace('菲菲', '')
-                love = love_score(message)
-                logger.debug('情感运算')
-                if love != 0:
-                    updata_love(qq, love)
-                    logger.debug(qq+'情感运算'+str(love))
-                if reply != None:
-                    reply = str(reply)
-                    reply = reply.replace('菲菲', bot_name)
-                    reply = del_face(reply)
-                    await bot.send(event, reply, True)
+            # if a == True:
+            if sentiment_score <= 0.1 or model == 'qingyunke':
+                message = message.replace(bot_name, '菲菲')
+                reply = await qingyunke(message)
             else:
+                reply = await baidu_ai(message, qq, intlove, name)
+            message = message.replace('菲菲', '')
+            love = love_score(message)
+            logger.debug('情感运算')
+            if love != 0 and a == True:
+                updata_love(qq, love)
+                logger.debug(qq+'情感运算'+str(love))
+            elif a == False:
+                updata_love(qq, -3)
                 logger.debug('重复消息')
+            if reply != None:
+                reply = str(reply)
+                reply = reply.replace('菲菲', bot_name)
+                reply = del_face(reply)
+                await bot.send(event, reply, True)
+            # else:
+            #    logger.debug('重复消息')
             mark_achieve()
     m = random.random()
     if m <= 0.004 and botreact == 'True' and isSend == False:
@@ -2437,10 +2597,9 @@ async def fegsg(event: GroupMessage):
             message = message.replace(bot_name, '菲菲')
             reply = await qingyunke(message)
         else:
-            reply = await baidu_ai(message)
+            reply = await baidu_ai(message, qq, intlove, name)
         s2 = SnowNLP(message)
         key = s2.keywords(1)
-        qq = str(event.sender.id)
         message = message.replace('菲菲', '')
         love = love_score(message)
         if love >= 5:
@@ -2461,10 +2620,16 @@ async def fegsg(event: GroupMessage):
             await bot.send(event, [At(int(qq)), ' '+reply])
         mark_achieve()
 
+
 # 函数注册表
 function_registry = {
     "get_love": ws_load_love,  # 需要qq
-    "change_love": ws_change_love  # 需要qq和love
+    "change_love": ws_change_love,  # 需要qq和love
+    "get_lv": ws_get_range,  # 需要qq
+    'get_rank': ws_get_rank,
+    "isAdmin": check_admin,
+    "silence": isSilence,
+    'love_score': love_score
 }
 
 # 辅助函数，用于检查参数并调用函数
@@ -2522,7 +2687,7 @@ if ws == "True":
     ws_thread.start()
 else:
     logger.info('ws服务被禁用')
-del ws
+del ws, ws_thread
 retry = False
 try:
     logger.info('Ciallo～(∠・ω< )⌒★')
