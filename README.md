@@ -8,7 +8,7 @@
 * [mirai](https://github.com/mamoe/mirai)——高效率 QQ 机器人支持库
 * [mirai-api-http](https://github.com/project-mirai/mirai-api-http)——提供HTTP API供所有语言使用mirai。
 ****
-## 项目简介
+## 项目简介项目简介
 **LoveYou是一个高性能的、可高度自定义的词库+好感度系统插件**
 <br>
 **在v1.50及以后，内存占用降低至170MB左右**
@@ -18,15 +18,16 @@
 * 好感度系统是完全兼容词库且高效的
 * 项目是灵动的，而非死气沉沉的
 <br>
-本项目release包性能表现：已知2w行的词库可瞬间回复。<br>
-[测试用词库](https://github.com/hlfzsi/yirimirai_LoveYou/blob/main/example/reply.csv)
 
-<br>
+本项目release包性能表现：已知2w行的词库可瞬间回复。
+* [测试用词库](https://github.com/hlfzsi/yirimirai_LoveYou/blob/main/example/reply.csv)
 ****
+<br>
+
 ## 快速上手
 本项目仅支持64位系统<br>
 首先，请正确配置mirai-api-http<br>
-[mirai-api-http参考配置](https://github.com/avilliai/wReply/blob/master/setting.yml)<br>
+* [mirai-api-http参考配置](https://github.com/avilliai/wReply/blob/master/setting.yml)<br>
 需要注意，本项目仅支持正向ws<br>
 之后，你需要确认config.ini填写无误
 
