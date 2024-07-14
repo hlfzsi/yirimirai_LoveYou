@@ -23,9 +23,12 @@
 ## 快速上手
 本项目仅支持64位系统<br>
 首先，请正确配置mirai-api-http<br>
-[mirai-api-http参考配置](https://github.com/avilliai/wReply/blob/master/setting.yml)，需要注意，本项目仅支持正向ws<br>
+[mirai-api-http参考配置](https://github.com/avilliai/wReply/blob/master/setting.yml)
+需要注意，本项目仅支持正向ws<br>
 之后，你需要确认config.ini填写无误
-```
+
+
+`````
 请勿直接复制本config.ini
 [bot]如果你按照mirai-api-http参考配置进行部署，则无需修改verify_key、host、port
 bot_qq = bot的QQ号
@@ -73,7 +76,7 @@ lv4_reply=
 
 lv5=1000,9999
 lv5_reply=
-```
+`````
 
 1.**Windows**<br>
  下载最新的[release](https://github.com/hlfzsi/yirimirai_LoveYou/releases)，解压，填写config.ini，编辑你的reply.csv，启动exe即可<br>
@@ -229,20 +232,20 @@ LoveYou的默认ws端口为8686<br>
 变量的存在与否以及存在顺序都是严格的
 
 
-```
+`````
 {  
   "type": "get_love",
   "qq": "123456789"  
 }
-```
+`````
 
-```
+`````
 {  
   "type": "isAdmin",
   "groupid":"123456789",
   "qq":"123456789"
 }
-```
+`````
 
 
 #### 返回示例
